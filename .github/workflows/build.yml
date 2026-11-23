@@ -102,9 +102,11 @@ jobs:
           "$NODE" src/server.js --no-open > server.log 2>&1 &
           for _ in $(seq 1 30); do curl -sf http://127.0.0.1:18848/api/settings && break; sleep 1; done
           echo
-          curl -sf http://127.0.0.1:18848/ | grep -q '公众号写作助手'
-          curl -sf -X POST http://127.0.0.1:18848/api/settings -H 'Content-Type: application/json' \
-            -d '{"baseUrl":"https://api.deepseek.com/v1","model":"deepseek-chat"}' | grep -q 'api.deepseek.com'
+          page=$(curl -sf http://127.0.0.1:18848/)
+          grep -q '公众号写作助手' <<<"$page"
+          saved=$(curl -sf -X POST http://127.0.0.1:18848/api/settings -H 'Content-Type: application/json' \
+            -d '{"baseUrl":"https://api.deepseek.com","model":"deepseek-v4-pro"}')
+          grep -q 'deepseek-v4-pro' <<<"$saved"
           cat server.log
           kill %1 || true
 
