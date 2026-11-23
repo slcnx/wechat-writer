@@ -6,9 +6,11 @@ import { paths } from './config.js';
 import { writeFileAtomic, readJsonSafe } from './fsutil.js';
 import { runCodex, buildWritePrompt, buildRevisePrompt } from './codex.js';
 import { sanitizeBody, validateArticle } from './article.js';
+import { decodeFiles, saveMaterials, readImages, describeImages } from './materials.js';
+import { describeImages as visionDescribe } from './vision.js';
 
 const ID_RE = /^\d{8}-\d{6}-[a-f0-9]{4}$/;
-const MAX_FILE = 5 * 1024 * 1024;
+const MAX_VISION = 8; // 最多把 8 张图片直接给模型看
 const MAX_LOG = 400;
 const live = new Map(); // id -> job（内存中带实时日志）
 
@@ -24,11 +26,6 @@ function newId() {
   return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}-${crypto.randomBytes(2).toString('hex')}`;
 }
 
-export function safeFileName(name, i) {
-  const base = path.basename(String(name || '')).replace(/[^\w.一-龥-]/g, '_').slice(0, 80);
-  return base && !base.startsWith('.') ? base : `file-${i}.txt`;
-}
-
 function persist(job) {
   const { log, ...rest } = job;
   writeFileAtomic(path.join(jobDir(job.id), 'job.json'), JSON.stringify({ ...rest, log: log.slice(-80) }, null, 2));
@@ -42,17 +39,40 @@ export function readArticle(id) {
   try { body = fs.readFileSync(path.join(out, 'article.body.html'), 'utf8'); } catch { /* 未生成 */ }
   const clean = sanitizeBody(body);
   if (clean && clean !== body) writeFileAtomic(path.join(out, 'article.body.html'), clean);
-  return { meta: meta || {}, body: clean, check: validateArticle(meta, clean) };
+  const images = readImages(jobDir(id));
+  return { meta: meta || {}, body: clean, images, check: validateArticle(meta, clean, images) };
 }
 
-function start(job, prompt, settings) {
+const TEXT_ONLY = ['--disable', 'view_image'];
+const noVision = new Set(); // 本次运行中已确认不支持图片输入的「地址|模型」
+
+/** 有图片时先把图片附给模型看（能看图的模型据画面写图注）；已知不支持看图的模型直接关掉看图工具。 */
+export function visionArgs(dir, settings) {
+  const images = readImages(dir);
+  if (!images.length || settings.visionModel || noVision.has(`${settings.baseUrl}|${settings.model}`)) return TEXT_ONLY;
+  return images.slice(0, MAX_VISION).flatMap((m) => ['-i', path.join(dir, 'materials', m.src)]);
+}
+
+function start(job, buildPrompt, settings) {
   const log = (line) => { job.log.push(line); if (job.log.length > MAX_LOG) job.log.shift(); };
   job.status = 'running';
   job.error = '';
   job.updatedAt = Date.now();
   persist(job);
-  const run = runCodex({ cwd: jobDir(job.id), prompt, settings, onLog: log });
-  run.done.then((code) => {
+  const cwd = jobDir(job.id);
+  // 设置了看图模型：先把图片（base64）交给它生成画面描述，写作模型据描述安排图片
+  const done = visionDescribe(cwd, settings, log).catch((e) => log(`[看图] 出错：${e.message}`)).then(() => {
+    const prompt = buildPrompt();
+    const vision = visionArgs(cwd, settings);
+    const once = (extraArgs) => runCodex({ cwd, prompt, settings, extraArgs, onLog: log }).done;
+    return once(vision).then((code) => {
+      if (code === 0 || vision === TEXT_ONLY) return code;
+      noVision.add(`${settings.baseUrl}|${settings.model}`);
+      log('[提示] 当前模型不支持看图，改为不看图重试：按文件名、素材说明和上下文安排图片（可在设置里选一个「看图模型」）');
+      return once(TEXT_ONLY);
+    });
+  });
+  done.then((code) => {
     const { check } = readArticle(job.id);
     job.check = check;
     job.status = check.ok ? 'done' : 'failed';
@@ -63,20 +83,16 @@ function start(job, prompt, settings) {
   return job;
 }
 
-export function createJob(input, settings) {
+export async function createJob(input, settings) {
   const materials = String(input.materials || '').trim();
-  const files = Array.isArray(input.files) ? input.files : [];
-  if (!materials && files.length === 0) throw new Error('请至少提供一段素材或一个素材文件');
-  const bufs = files.map((f) => Buffer.from(String(f.content || ''), 'base64'));
-  bufs.forEach((b, i) => { if (b.length > MAX_FILE) throw new Error(`${files[i].name} 超过 5MB`); });
+  const decoded = decodeFiles(input.files);
+  if (!materials && decoded.length === 0) throw new Error('请至少提供一段素材或一个素材文件');
   const id = newId();
   const dir = jobDir(id);
   fs.mkdirSync(path.join(dir, 'materials'), { recursive: true });
   fs.mkdirSync(path.join(dir, 'out'), { recursive: true });
   if (materials) writeFileAtomic(path.join(dir, 'materials', '00-用户输入.md'), materials);
-  files.forEach((f, i) => {
-    writeFileAtomic(path.join(dir, 'materials', `${String(i + 1).padStart(2, '0')}-${safeFileName(f.name, i)}`), bufs[i]);
-  });
+  await saveMaterials(dir, decoded);
   const brief = {
     title: String(input.title || '').slice(0, 64),
     style: String(input.style || '干货科普'),
@@ -88,17 +104,23 @@ export function createJob(input, settings) {
   writeFileAtomic(path.join(dir, 'brief.json'), JSON.stringify(brief, null, 2));
   const job = { id, title: brief.title, status: 'queued', createdAt: Date.now(), log: [], check: null, error: '' };
   live.set(id, job);
-  return start(job, buildWritePrompt(brief), settings);
+  return start(job, () => buildWritePrompt(brief, describeImages(readImages(dir))), settings);
 }
 
-export function reviseJob(id, instruction, settings) {
+/** 按修改意见改稿；可同时补传图片/文档（图片接着编号），意见里可直接写"图2放开头"。 */
+export async function reviseJob(id, input, settings) {
   const job = getJob(id);
   if (!job) throw new Error('文章不存在');
   if (job.status === 'running') throw new Error('该文章正在生成中');
-  if (!String(instruction || '').trim()) throw new Error('请填写修改意见');
+  const instruction = String(input.instruction || '').trim();
+  const decoded = decodeFiles(input.files);
+  if (!instruction && !decoded.length) throw new Error('请填写修改意见或补充素材');
+  const dir = jobDir(id);
+  const { saved, images } = await saveMaterials(dir, decoded, '修改时补充：');
+  const added = [...saved.map((f) => `materials/${f}`), ...images.map((m) => `${m.id}（${m.src}）`)];
   job.log = job.log || [];
   live.set(id, job);
-  return start(job, buildRevisePrompt(String(instruction).slice(0, 2000)), settings);
+  return start(job, () => buildRevisePrompt(instruction || '把新补充的素材用进文章', describeImages(readImages(dir)), added), settings);
 }
 
 export function getJob(id) {

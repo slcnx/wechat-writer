@@ -20,7 +20,9 @@
     <div class="actions"><button id="presetDeepseek" class="ghost" type="button">使用 DeepSeek 官方</button><span class="hint">也可填任何支持 Responses API 的 OpenAI 兼容地址</span></div>
     <label>API 地址<input id="baseUrl" placeholder="https://api.deepseek.com"></label>
     <label>API Key <input id="apiKey" type="password" placeholder="sk-..."></label>
-    <label>模型 <select id="model"></select></label>
+    <label>写作模型 <span id="modelHint" class="hint"></span><select id="model"></select></label>
+    <label>看图模型（可选）<select id="visionModel"></select>
+      <span class="hint">写作模型不能看图时，选一个能看图的模型：上传的图片会先交给它生成画面描述，再写进文章。</span></label>
     <label>作者署名 <input id="author" maxlength="16"></label>
     <label>浏览器
       <select id="browser"><option value="msedge">Microsoft Edge</option><option value="chrome">Google Chrome</option><option value="chromium">Playwright Chromium</option></select>
@@ -28,9 +30,8 @@
     <label>Codex 权限
       <select id="sandbox"><option value="workspace-write">仅读写当前文章目录（推荐）</option><option value="danger-full-access">完全访问本机（不推荐）</option></select>
     </label>
-    <label class="row"><input id="browserMcp" type="checkbox"> 为 Codex 交互模式开启浏览器 MCP（高级，可不开）</label>
     <div class="actions">
-      <button id="btnTest" class="ghost">测试连接并加载模型</button>
+      <button id="btnTest" class="ghost">刷新模型列表</button>
       <button id="btnSave">保存</button>
       <span id="settingsMsg" class="msg"></span>
     </div>
@@ -50,7 +51,9 @@
       </div>
       <label>目标读者<input id="audience" placeholder="例：在成都生活的上班族"></label>
       <label>素材（粘贴文字、要点、采访记录、链接文字都行）<textarea id="materials" rows="10"></textarea></label>
-      <label>素材文件（txt / md / html / csv，可多选）<input id="files" type="file" multiple accept=".txt,.md,.markdown,.html,.htm,.csv,.json"></label>
+      <label>素材文件：图片（jpg/png/gif/webp，按顺序编号为 图1、图2…）、Word（.docx）、PDF、txt/md/html/csv，可多次添加
+        <input id="files" type="file" multiple accept=".png,.jpg,.jpeg,.gif,.webp,.docx,.pdf,.txt,.md,.markdown,.html,.htm,.csv,.json"></label>
+      <div id="fileList" class="mat-list"></div>
       <label>额外要求（可空）<input id="extra" placeholder="例：主色用 #c0392b；结尾引导关注"></label>
       <div class="actions"><button id="btnGenerate">生成文章</button><span id="genMsg" class="msg"></span></div>
       <pre id="log" class="log hidden"></pre>
@@ -67,15 +70,23 @@
         <button id="btnOpenMp" class="ghost">打开公众号后台</button>
         <button id="btnPublish" disabled>一键填入公众号草稿</button>
       </div>
+      <div id="gallery" class="mat-list hidden"></div>
       <div class="actions">
-        <input id="revise" placeholder="修改意见，例：开头更抓人，第二节加一个例子">
+        <input id="revise" placeholder="修改意见，例：图2放开头做头图；删掉图3；第二节加一个例子">
         <button id="btnRevise" class="ghost" disabled>按意见修改</button>
+      </div>
+      <label class="small">补充图片/文档（可选，图片接着现有编号）<input id="reviseFiles" type="file" multiple accept=".png,.jpg,.jpeg,.gif,.webp,.docx,.pdf,.txt,.md,.markdown,.html,.htm,.csv,.json"></label>
+      <div id="reviseList" class="mat-list"></div>
+      <div class="actions">
+        <input id="browserCmd" placeholder="浏览器指令，例：把图3设为封面；标题改成…；截图看看排版（在已打开的公众号编辑器里执行）">
+        <button id="btnBrowserCmd" class="ghost" disabled>让 AI 去做</button>
       </div>
       <p id="pubMsg" class="msg"></p>
       <pre id="pubLog" class="log hidden"></pre>
     </section>
   </div>
 </main>
+<script src="/materials.js"></script>
 <script src="/app.js"></script>
 </body>
 </html>

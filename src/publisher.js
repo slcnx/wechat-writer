@@ -1,10 +1,10 @@
-// 浏览器与填稿：应用负责打开本机 Edge/Chrome（独立用户目录，保存扫码登录态）并等待登录；
-// 填稿交给 Codex + wechat-publish skill（通过 CDP 连接这个浏览器，失败时自行诊断修正）。
-// 最终「保存为草稿 / 发表」由用户本人点击。
+// 浏览器与指令：应用负责打开本机 Edge/Chrome（独立用户目录，保存扫码登录态）并等待登录；
+// 之后用户的指令（填稿、设封面、改标题……）交给 Codex：wechat-publish skill 给标准流程，
+// Codex 通过 Playwright MCP（CDP 连这个浏览器）自己操作。最终「保存为草稿 / 发表」由用户本人点击。
 import fs from 'node:fs';
 import path from 'node:path';
 import { chromium } from 'playwright-core';
-import { paths } from './config.js';
+import { paths, APP_ROOT } from './config.js';
 import { runCodex } from './codex.js';
 import { writeFileAtomic } from './fsutil.js';
 
@@ -75,40 +75,67 @@ async function waitLogin(page) {
   throw new Error('5 分钟内未检测到登录，请扫码后重试');
 }
 
-export function buildPublishPrompt(scriptPath) {
+export const FILL_INSTRUCTION = '把这篇文章填进公众号编辑器（新建图文），并按 meta.json 的 cover 设置封面';
+
+export function buildPublishPrompt(scriptPath, instruction = FILL_INSTRUCTION) {
   return [
-    '使用 wechat-publish skill，把当前目录 out/ 下的成稿填进公众号后台编辑器。',
-    `填稿脚本的绝对路径：${scriptPath}`,
-    '浏览器连接信息在当前目录 cdp.json。严禁点击发表、群发或保存为草稿。',
+    '使用 wechat-publish skill，在已登录的公众号后台按用户指令操作。',
+    `skill 自带脚本的绝对路径：${scriptPath}`,
+    '浏览器连接信息在当前目录 cdp.json；浏览器操作用 browser 工具（已连到同一个浏览器）。',
+    '严禁点击发表、群发或保存为草稿。',
+    `用户指令：${instruction}`,
   ].join('\n');
 }
 
-/** 一键填稿：打开浏览器 → 等扫码登录 → 交给 Codex 按 wechat-publish skill 填写。 */
-export async function fillDraft({ id, dir }, settings) {
+const toml = (v) => JSON.stringify(String(v));
+/** 本次运行接上浏览器工具：Playwright MCP 连本机这个浏览器，工具调用免审批（仅限此次运行）。 */
+export function browserMcpArgs(endpoint) {
+  const cli = path.join(APP_ROOT, 'node_modules', '@playwright', 'mcp', 'cli.js');
+  return [
+    '-c', `mcp_servers.browser.command=${toml(process.execPath)}`,
+    // 不把截图等图片回传给模型：很多 OpenAI 兼容网关/模型不接受图片，会让整次会话报错
+    '-c', `mcp_servers.browser.args=[${[cli, '--cdp-endpoint', endpoint, '--image-responses', 'omit'].map(toml).join(', ')}]`,
+    '-c', 'mcp_servers.browser.default_tools_approval_mode="approve"',
+    '-c', 'mcp_servers.browser.startup_timeout_sec=60',
+  ];
+}
+
+/** 取 Codex 最后一条回复（日志里最后一个 "codex" 行之后、"tokens used" 之前）。 */
+export function finalReply(lines) {
+  const i = lines.lastIndexOf('codex');
+  if (i < 0) return '';
+  const rest = lines.slice(i + 1);
+  const end = rest.findIndex((l) => l.startsWith('tokens used'));
+  return (end < 0 ? rest : rest.slice(0, end)).join(' ').replace(/\*\*/g, '').replace(/\s+/g, ' ').trim();
+}
+
+/** 浏览器指令：打开浏览器 → 等扫码登录 → 交给 Codex 按 wechat-publish skill 执行（默认指令是填稿）。 */
+export async function fillDraft({ id, dir, instruction }, settings) {
   state.log = [];
   setState('opening', '正在启动浏览器…', id);
   try {
     const page = await openMp(settings);
     if (!tokenFromUrl(page.url())) setState('login', '请在弹出的浏览器里用微信扫码登录公众号后台（5 分钟内）', id);
     await waitLogin(page);
-    writeFileAtomic(path.join(dir, 'cdp.json'), JSON.stringify({ endpoint: await cdpEndpoint() }));
-    setState('editing', '已登录，AI 正在按 wechat-publish skill 填写公众号编辑器…', id);
+    writeFileAtomic(path.join(dir, 'cdp.json'), JSON.stringify({ endpoint: await cdpEndpoint(), articleId: id }));
+    const endpoint = await cdpEndpoint();
+    setState('editing', `已登录，AI 正在执行：${instruction || '填入公众号编辑器'}…`, id);
     const script = path.join(paths.codexHome(), 'skills', 'wechat-publish', 'scripts', 'fill-mp.mjs');
     const run = runCodex({
       cwd: dir,
-      prompt: buildPublishPrompt(script),
+      prompt: buildPublishPrompt(script, instruction || FILL_INSTRUCTION),
       settings,
       // 填稿需要连本机浏览器调试端口，单独为这次运行打开网络
-      extraArgs: ['-c', 'sandbox_workspace_write.network_access=true'],
+      extraArgs: ['-c', 'sandbox_workspace_write.network_access=true', '--disable', 'view_image', ...browserMcpArgs(endpoint)],
       onLog: (l) => { state.log.push(l); if (state.log.length > MAX_LOG) state.log.shift(); },
-      timeoutMs: 8 * 60 * 1000,
+      timeoutMs: 12 * 60 * 1000,
     });
     const code = await run.done;
-    const last = [...state.log].reverse().find((l) => /"ok":\s*(true|false)/.test(l)) || '';
-    if (code === 0 && /"ok":\s*true/.test(last)) {
-      setState('ready', '已填入公众号编辑器。请在浏览器里检查排版、设置封面，然后自己点「保存为草稿」或「发表」。', id);
+    const summary = finalReply(state.log);
+    if (code === 0) {
+      setState('ready', `AI 已执行完毕：${summary.slice(0, 300) || '见下方日志'} —— 请在浏览器里检查，然后自己点「保存为草稿」或「发表」。`, id);
     } else {
-      setState('error', `AI 填稿未成功（看下方日志）。可在预览区点「复制富文本」手动粘贴。${last ? ` 最后结果：${last.slice(0, 200)}` : ''}`, id);
+      setState('error', `AI 执行未成功（看下方日志）。填稿失败时可在预览区点「复制富文本」手动粘贴。${summary ? ` ${summary.slice(0, 300)}` : ''}`, id);
     }
   } catch (e) {
     setState('error', e.message, id);

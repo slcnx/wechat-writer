@@ -48,6 +48,15 @@
 <hr style="border:none;border-top:1px dashed #ddd;margin:28px 0;">
 ```
 
+## 图片（素材图片，src 照抄 images.json）
+
+```html
+<p style="margin:20px 0 6px;text-align:center;"><img src="images/img01.jpg" alt="图1 图注" style="max-width:100%;border-radius:6px;"></p>
+<p style="margin:0 0 20px;text-align:center;font-size:13px;color:#999;">图注：一句话说明画面</p>
+```
+
+小图：把 `max-width:100%` 改为 `max-width:60%`。
+
 ## 配图建议占位
 
 ```html

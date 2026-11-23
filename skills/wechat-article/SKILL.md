@@ -10,7 +10,8 @@ description: 根据用户给的素材撰写微信公众号文章，并输出可�
 ## 输入
 
 - `brief.json`：`title`（标题方向，可空）、`style`（文风）、`audience`（读者）、`length`（篇幅）、`author`、`extra`（额外要求）。
-- `materials/`：用户素材（md/txt/html/csv 等）。全部读完再动笔。
+- `materials/`：用户素材。文本原样保存；Word/PDF 已提取成同名 `.txt`；全部读完再动笔。
+- `materials/images.json`：图片素材清单，每项 `{ "id": "图1", "src": "images/img01.jpg", "from": "原文件名" }`。任务说明里也会列出。若模型能看到附带的图片，结合画面内容决定怎么用；看不到时按文件名和上下文判断。
 
 ## 工作流程
 
@@ -33,8 +34,20 @@ description: 根据用户给的素材撰写微信公众号文章，并输出可�
 - 允许的标签：`section`、`p`、`h2`、`h3`、`strong`、`em`、`span`、`blockquote`、`ul`、`ol`、`li`、`img`、`br`、`hr`。
 - 不要 `<a>` 超链接（公众号会去掉外链）；需要给链接时写成纯文本"原文地址：xxx"。
 - 不要表格；对比信息用列表。不要外链字体、背景图。
-- 图片：只有素材里给了 `http(s)` 图片地址才用 `<img src="..." style="width:100%;display:block;margin:16px auto;">`；否则在合适位置放一段灰色提示 `【配图建议：……】`。
+- 图片：见下方「图片规范」。素材里没有图片又需要配图时，放一段灰色提示 `【配图建议：……】`。
 - 统一样式参考 `references/style.md`，直接复制里面的内联 style，不要自创花哨配色。
+
+## 图片规范（由你决定位置、图注和样式）
+
+- **只能用** `images.json` 里的图片（`src` 原样照抄，如 `images/img01.jpg`）或素材里明确给出的 `https://` 图片地址；不要编造地址，不要用 data URI。
+- 每张图单独成块，紧跟一行图注，样式直接用 `references/style.md` 的「图片」片段：
+  `<p style="margin:20px 0 6px;text-align:center;"><img src="images/img01.jpg" alt="图1 图注文字" style="max-width:100%;border-radius:6px;"></p>`
+  `<p style="margin:0 0 20px;text-align:center;font-size:13px;color:#999;">图注：一句话说明画面</p>`
+- 放在与图片内容最相关的段落之后；头图（最能代表全文的那张）放在开头钩子段落之后。默认把用户给的图片都用上，除非明显无关（无关的在回复里说明）。
+- 图注写画面里的事实，不要编造画面中看不出的信息（店名、价格等看不清就不写）。
+- **修改意见里提到"图N"**（如"图2放开头""删掉图3""图1换成小图""图4下面加说明"），按 `images.json` 的 id 找到对应 src 精确执行；"小图"用 `max-width:60%`，"大图/通栏"用 `width:100%`。
+- 把用到的图片 id 按出现顺序写进 meta.json 的 `images` 字段。
+- **封面**：从图片素材里选最适合做封面的一张（主体清晰、适合横向 2.35:1 裁剪、能代表全文），把 id 写进 meta.json 的 `cover`（如 `"图2"`）；没有合适图片就写空字符串，并在 `cover_hint` 里描述建议画面。修改意见里写"图N做封面"时照改 `cover`。
 
 ## meta 规范
 
@@ -46,7 +59,9 @@ description: 根据用户给的素材撰写微信公众号文章，并输出可�
   "author": "取 brief.json 的 author，空则空字符串",
   "digest": "摘要，≤120 字，一句话讲清读者能获得什么",
   "cover_hint": "封面图建议（画面描述，给作者自己配图用）",
-  "todo": ["需要作者确认的【待核实】点，没有就空数组"]
+  "todo": ["需要作者确认的【待核实】点，没有就空数组"],
+  "images": ["图1", "图3"],
+  "cover": "图1"
 }
 ```
 
@@ -60,6 +75,7 @@ description: 根据用户给的素材撰写微信公众号文章，并输出可�
 - [ ] 纯文字字数符合 `brief.json.length`（默认 1500~2500 字），至少 3 个 `h2` 小节。
 - [ ] `out/meta.json` 是合法 JSON，title ≤ 64 字，digest ≤ 120 字。
 - [ ] 没有素材之外的编造数据；不确定处已标【待核实】并写进 `todo`。
+- [ ] 每个 `<img>` 的 src 都在 `images.json` 里（或是素材给的 https 地址），每张图后有图注；修改意见里点名的图片都已按要求处理。
 - [ ] 结尾有总结或互动问题。
 
 完成后在回复里用 3 行以内说明：标题、字数、待核实项数量。

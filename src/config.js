@@ -23,10 +23,11 @@ export const DEFAULTS = Object.freeze({
   baseUrl: 'https://api.deepseek.com',
   apiKey: '',
   model: 'deepseek-flash',
+  visionModel: '',
+  modelPinned: false, // 用户在设置页手动选过并保存后为 true，之后不再自动推荐
   author: '',
   browser: process.platform === 'win32' ? 'msedge' : 'chrome',
   sandbox: 'workspace-write',
-  browserMcp: false,
 });
 
 const BROWSERS = ['msedge', 'chrome', 'chromium'];
@@ -53,6 +54,12 @@ export function mergeSettings(current, patch) {
     if (!/^[\w.:/@-]{1,120}$/.test(m)) throw new Error('模型名不合法');
     next.model = m;
   }
+  if (patch.visionModel !== undefined) {
+    const v = String(patch.visionModel).trim();
+    if (v && !/^[\w.:/@-]{1,120}$/.test(v)) throw new Error('看图模型名不合法');
+    next.visionModel = v;
+  }
+  if (patch.modelPinned !== undefined) next.modelPinned = Boolean(patch.modelPinned);
   if (patch.author !== undefined) next.author = String(patch.author).trim().slice(0, 16);
   if (patch.browser !== undefined) {
     if (!BROWSERS.includes(patch.browser)) throw new Error(`浏览器只能是 ${BROWSERS.join('/')}`);
@@ -62,7 +69,6 @@ export function mergeSettings(current, patch) {
     if (!SANDBOXES.includes(patch.sandbox)) throw new Error('sandbox 取值不合法');
     next.sandbox = patch.sandbox;
   }
-  if (patch.browserMcp !== undefined) next.browserMcp = Boolean(patch.browserMcp);
   return next;
 }
 
@@ -97,10 +103,6 @@ export function buildCodexConfig(s, platform = process.platform) {
   if (platform === 'win32' && s.sandbox !== 'danger-full-access') {
     // Windows 默认沙箱需要管理员预配置，否则所有命令都被拦截；unelevated 用受限令牌，开箱即用
     lines.push('', '[windows]', 'sandbox = "unelevated"');
-  }
-  if (s.browserMcp) {
-    lines.push('', '[mcp_servers.playwright]', 'command = "npx"',
-      `args = ["-y", "@playwright/mcp@latest", "--browser", ${toml(s.browser)}, "--user-data-dir", ${toml(paths.profile())}]`);
   }
   return lines.join('\n') + '\n';
 }

@@ -13,59 +13,85 @@ async function call(path, body) {
 function msg(el, text, kind = '') { el.textContent = text; el.className = `msg ${kind}`; }
 
 // ---------- 设置 ----------
+let saved = {};
 async function loadSettings() {
-  const s = await call('/api/settings');
-  $('baseUrl').value = s.baseUrl;
-  $('apiKey').placeholder = s.hasKey ? `已保存 ${s.apiKeyHint}，留空表示不修改` : '网关不校验可留空';
-  $('author').value = s.author;
-  $('browser').value = s.browser;
-  $('browserMcp').checked = s.browserMcp;
-  $('sandbox').value = s.sandbox;
-  $('model').innerHTML = `<option>${s.model}</option>`;
-  return s;
+  saved = await call('/api/settings');
+  $('baseUrl').value = saved.baseUrl;
+  $('apiKey').value = '';
+  $('apiKey').placeholder = saved.hasKey ? `已保存 ${saved.apiKeyHint}，留空表示不修改` : 'sk-...（网关不校验可留空）';
+  $('author').value = saved.author;
+  $('browser').value = saved.browser;
+  $('sandbox').value = saved.sandbox;
+  fillModels([saved.model], saved.model, saved.visionModel);
+  return saved;
+}
+function fillModels(models, model, vision) {
+  const opt = (m, sel) => { const o = document.createElement('option'); o.value = m; o.textContent = m; o.selected = m === sel; return o; };
+  const list = [...new Set([model, ...models].filter(Boolean))];
+  $('model').replaceChildren(...list.map((m) => opt(m, model)));
+  const none = opt('', vision); none.textContent = '不单独设置（用写作模型看图）';
+  $('visionModel').replaceChildren(none, ...[...new Set([vision, ...models].filter(Boolean))].map((m) => opt(m, vision)));
+}
+// 推荐的写作模型（按优先级）：网关上的 1017 版 deepseek flash 优先，其次 DeepSeek 官方 deepseek-flash
+const PREFER = [/^deepseek-v4\.1-flash-1017$/i, /deepseek.*flash.*1017/i, /^deepseek-flash$/i, /^deepseek-v4\.1-flash$/i, /deepseek.*flash/i];
+function recommend(models) {
+  for (const re of PREFER) { const m = models.find((x) => re.test(x)); if (m) return m; }
+  return models.find((m) => /deepseek/i.test(m)) || models[0] || '';
+}
+/** 用当前填写（未保存也可）的地址和 Key 拉取模型列表；推荐模型置顶并在未手动选择时自动选中。 */
+async function refreshModels() {
+  msg($('settingsMsg'), '正在获取模型列表…');
+  try {
+    const { models } = await call('/api/models', { baseUrl: $('baseUrl').value, apiKey: $('apiKey').value });
+    const rec = recommend(models);
+    const rest = models.filter((m) => m !== rec);
+    const sorted = [rec, ...rest.filter((m) => /deepseek/i.test(m)), ...rest.filter((m) => !/deepseek/i.test(m))].filter(Boolean);
+    const keep = saved.modelPinned && sorted.includes($('model').value);
+    fillModels(sorted, keep ? $('model').value : rec, $('visionModel').value);
+    const recOpt = [...$('model').options].find((o) => o.value === rec);
+    if (recOpt) recOpt.textContent = `${rec}（推荐）`;
+    $('modelHint').textContent = `共 ${models.length} 个可选${keep ? '' : `，已自动选推荐模型`}`;
+    msg($('settingsMsg'), '已获取模型列表，选好后点保存', 'ok');
+  } catch (e) {
+    $('modelHint').textContent = '';
+    msg($('settingsMsg'), `获取模型失败：${e.message}（检查地址和 Key）`, 'err');
+  }
 }
 function settingsPatch() {
-  return { baseUrl: $('baseUrl').value, apiKey: $('apiKey').value, model: $('model').value, author: $('author').value, browser: $('browser').value, sandbox: $('sandbox').value, browserMcp: $('browserMcp').checked };
+  return { baseUrl: $('baseUrl').value, apiKey: $('apiKey').value, model: $('model').value, modelPinned: true, visionModel: $('visionModel').value, author: $('author').value, browser: $('browser').value, sandbox: $('sandbox').value };
 }
-$('btnSettings').onclick = () => $('paneSettings').classList.toggle('hidden');
-$('presetDeepseek').onclick = () => {
-  $('baseUrl').value = 'https://api.deepseek.com';
-  $('model').innerHTML = '<option selected>deepseek-flash</option><option>deepseek-v4-pro</option>';
-  msg($('settingsMsg'), '已填入 DeepSeek 官方地址，粘贴 Key 后点「测试连接」或直接保存');
+$('btnSettings').onclick = () => {
+  const pane = $('paneSettings');
+  pane.classList.toggle('hidden');
+  if (!pane.classList.contains('hidden')) refreshModels();
 };
+$('presetDeepseek').onclick = () => { $('baseUrl').value = 'https://api.deepseek.com'; refreshModels(); };
+$('baseUrl').addEventListener('change', refreshModels);
+$('apiKey').addEventListener('change', refreshModels);
+$('btnTest').onclick = refreshModels;
 $('btnSave').onclick = async () => {
-  try { await call('/api/settings', settingsPatch()); $('apiKey').value = ''; await loadSettings(); msg($('settingsMsg'), '已保存', 'ok'); if (!$('sandbox').value.startsWith('workspace')) msg($('settingsMsg'), '已保存（注意：已开启完全访问，素材里的恶意指令可能操作你的电脑）', 'err'); } catch (e) { msg($('settingsMsg'), e.message, 'err'); }
-};
-$('btnTest').onclick = async () => {
-  msg($('settingsMsg'), '连接中…');
   try {
-    const want = $('model').value;
-    await call('/api/settings', { baseUrl: $('baseUrl').value, apiKey: $('apiKey').value });
-    const { models } = await call('/api/models');
-    const ds = models.filter((m) => /deepseek/i.test(m));
-    const list = [...ds, ...models.filter((m) => !ds.includes(m))];
-    $('model').innerHTML = list.map((m) => `<option ${m === want ? 'selected' : ''}>${m}</option>`).join('');
-    msg($('settingsMsg'), `连接成功，共 ${models.length} 个模型（DeepSeek 已置顶），选好后点保存`, 'ok');
-  } catch (e) { msg($('settingsMsg'), `连接失败：${e.message}`, 'err'); }
+    await call('/api/settings', settingsPatch());
+    await loadSettings();
+    await refreshModels();
+    if ($('sandbox').value.startsWith('workspace')) msg($('settingsMsg'), '已保存', 'ok');
+    else msg($('settingsMsg'), '已保存（注意：已开启完全访问，素材里的恶意指令可能操作你的电脑）', 'err');
+  } catch (e) { msg($('settingsMsg'), e.message, 'err'); }
 };
 
 // ---------- 生成 ----------
-function readFile(f) {
-  return new Promise((resolve, reject) => {
-    const r = new FileReader();
-    r.onload = () => resolve({ name: f.name, content: String(r.result).split(',')[1] || '' });
-    r.onerror = reject;
-    r.readAsDataURL(f);
-  });
-}
+let currentImages = [];
+const mainPicker = Mat.picker('files', 'fileList');
+const revisePicker = Mat.picker('reviseFiles', 'reviseList', () => currentImages.length + 1);
 $('btnGenerate').onclick = async () => {
   const btn = $('btnGenerate');
   btn.disabled = true;
   try {
-    const files = await Promise.all([...$('files').files].map(readFile));
+    const files = await mainPicker.read();
     const body = { title: $('title').value, style: $('style').value, length: $('length').value, audience: $('audience').value, materials: $('materials').value, extra: $('extra').value, files };
     const { id } = await call('/api/generate', body);
     msg($('genMsg'), 'AI 正在写作，通常 1~5 分钟…');
+    mainPicker.clear();
     select(id);
   } catch (e) { msg($('genMsg'), e.message, 'err'); btn.disabled = false; }
 };
@@ -107,8 +133,12 @@ async function showArticle(id) {
   box.textContent = (c.ok ? '✓ 校验通过 · ' : '✗ 未通过 · ') + lines.join('  ');
   box.className = `check ${c.ok ? 'good' : 'bad'}`;
   $('preview').src = `/preview/${id}?t=${Date.now()}`;
+  currentImages = a.images || [];
+  Mat.gallery('gallery', currentImages, id, a.meta.images || [], 'revise', a.meta.cover || '');
+  revisePicker.render();
   $('btnCopy').disabled = !a.body;
   $('btnPublish').disabled = !c.ok;
+  $('btnBrowserCmd').disabled = !a.body;
 }
 
 async function refreshHistory() {
@@ -132,8 +162,10 @@ async function refreshHistory() {
 // ---------- 修改 / 复制 / 发布 ----------
 $('btnRevise').onclick = async () => {
   try {
-    await call(`/api/jobs/${currentId}/revise`, { instruction: $('revise').value });
+    const files = await revisePicker.read();
+    await call(`/api/jobs/${currentId}/revise`, { instruction: $('revise').value, files });
     $('revise').value = '';
+    revisePicker.clear();
     msg($('genMsg'), '正在按意见修改…');
     select(currentId);
   } catch (e) { msg($('pubMsg'), e.message, 'err'); }
@@ -141,10 +173,11 @@ $('btnRevise').onclick = async () => {
 
 $('btnCopy').onclick = async () => {
   const a = await call(`/api/articles/${currentId}`);
+  const hasLocal = /src=["']images\//.test(a.body);
   const plain = $('preview').contentDocument?.getElementById('js_content')?.innerText || '';
   try {
     await navigator.clipboard.write([new ClipboardItem({ 'text/html': new Blob([a.body], { type: 'text/html' }), 'text/plain': new Blob([plain], { type: 'text/plain' }) })]);
-    msg($('pubMsg'), '已复制。到公众号编辑器正文处 Ctrl+V 粘贴即可（标题单独填写）', 'ok');
+    msg($('pubMsg'), `已复制。到公众号编辑器正文处 Ctrl+V 粘贴（标题单独填写）${hasLocal ? '。注意：本地图片不会随手动粘贴上传，请用「一键填入公众号草稿」' : ''}`, hasLocal ? '' : 'ok');
   } catch (e) { msg($('pubMsg'), `复制失败：${e.message}`, 'err'); }
 };
 
@@ -152,11 +185,18 @@ $('btnOpenMp').onclick = async () => {
   try { await call('/api/open-mp', {}); msg($('pubMsg'), '已在独立浏览器中打开公众号后台，首次需扫码登录', 'ok'); } catch (e) { msg($('pubMsg'), e.message, 'err'); }
 };
 
-$('btnPublish').onclick = async () => {
+async function browserTask(instruction) {
   try {
-    await call(`/api/publish/${currentId}`, {});
+    await call(`/api/publish/${currentId}`, { instruction });
     watchPublish();
   } catch (e) { msg($('pubMsg'), e.message, 'err'); }
+}
+$('btnPublish').onclick = () => browserTask('');
+$('btnBrowserCmd').onclick = () => {
+  const v = $('browserCmd').value.trim();
+  if (!v) return msg($('pubMsg'), '请先写一句指令', 'err');
+  $('browserCmd').value = '';
+  browserTask(v);
 };
 async function watchPublish() {
   const s = await call('/api/publish-status');
@@ -166,5 +206,7 @@ async function watchPublish() {
   if (['opening', 'login', 'editing'].includes(s.phase)) setTimeout(watchPublish, 1500);
 }
 
-loadSettings().then((s) => { if (!s.hasKey && /deepseek\.com/.test(s.baseUrl)) $('paneSettings').classList.remove('hidden'); });
+loadSettings().then((s) => {
+  if (!s.hasKey && /deepseek\.com/.test(s.baseUrl)) { $('paneSettings').classList.remove('hidden'); refreshModels(); }
+});
 refreshHistory();

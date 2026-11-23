@@ -3,10 +3,11 @@
 import http from 'node:http';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
-import { APP_ROOT, loadSettings, saveSettings, publicSettings } from './config.js';
+import { APP_ROOT, loadSettings, saveSettings, publicSettings, mergeSettings } from './config.js';
 import { readJson, sendJson, sendHtml, serveStatic } from './http.js';
 import { createJob, reviseJob, getJob, listJobs, readArticle, isValidId, jobDir } from './jobs.js';
-import { previewPage } from './article.js';
+import { previewPage, localizeImages } from './article.js';
+import fs from 'node:fs';
 import { fillDraft, openMp, state as publishState } from './publisher.js';
 
 const PORT = Number(process.env.WX_WRITER_PORT || 8848);
@@ -29,13 +30,15 @@ async function api(req, res, url) {
 
   if (p === '/api/settings' && req.method === 'GET') return sendJson(res, 200, publicSettings(settings));
   if (p === '/api/settings' && req.method === 'POST') return sendJson(res, 200, publicSettings(saveSettings(await readJson(req))));
-  if (p === '/api/models' && req.method === 'GET') {
-    const models = await listModels(settings);
-    return sendJson(res, 200, { models, current: settings.model, available: models.includes(settings.model) });
+  if (p === '/api/models' && (req.method === 'GET' || req.method === 'POST')) {
+    // POST 可带未保存的 baseUrl / apiKey 试连（apiKey 为空则用已保存的），用于设置页自动拉取模型列表
+    const probe = req.method === 'POST' ? mergeSettings(settings, await readJson(req)) : settings;
+    const models = await listModels(probe);
+    return sendJson(res, 200, { models, current: settings.model, vision: settings.visionModel, available: models.includes(settings.model) });
   }
   if (p === '/api/jobs' && req.method === 'GET') return sendJson(res, 200, { jobs: listJobs() });
   if (p === '/api/generate' && req.method === 'POST') {
-    const job = createJob(await readJson(req), settings);
+    const job = await createJob(await readJson(req), settings);
     return sendJson(res, 200, { id: job.id });
   }
   if (p === '/api/open-mp' && req.method === 'POST') {
@@ -51,16 +54,16 @@ async function api(req, res, url) {
     return job ? sendJson(res, 200, job) : sendJson(res, 404, { error: '文章不存在' });
   }
   if (kind === 'jobs' && action === '/revise' && req.method === 'POST') {
-    const { instruction } = await readJson(req);
-    reviseJob(id, instruction, settings);
+    await reviseJob(id, await readJson(req), settings);
     return sendJson(res, 200, { id });
   }
   if (kind === 'articles' && !action && req.method === 'GET') return sendJson(res, 200, readArticle(id));
   if (kind === 'publish' && !action && req.method === 'POST') {
+    const instruction = String((await readJson(req)).instruction || '').trim().slice(0, 1000);
     const a = readArticle(id);
-    if (!a.check.ok) return sendJson(res, 400, { error: `成稿未通过校验：${a.check.problems.join('；')}` });
+    if (!instruction && !a.check.ok) return sendJson(res, 400, { error: `成稿未通过校验：${a.check.problems.join('；')}` });
     if (['opening', 'login', 'editing'].includes(publishState.phase)) return sendJson(res, 409, { error: '已有发布流程在进行' });
-    fillDraft({ id, dir: jobDir(id) }, settings); // 后台执行（Codex + wechat-publish skill），前端轮询 publish-status
+    fillDraft({ id, dir: jobDir(id), instruction }, settings); // 后台执行（Codex + wechat-publish skill），前端轮询 publish-status
     return sendJson(res, 200, { started: true });
   }
   return sendJson(res, 404, { error: '接口不存在' });
@@ -79,7 +82,15 @@ const server = http.createServer(async (req, res) => {
     const pv = /^\/preview\/([^/]+)$/.exec(url.pathname);
     if (pv && isValidId(pv[1])) {
       const { meta, body } = readArticle(pv[1]);
-      return sendHtml(res, body ? previewPage(meta, body) : '<p>尚未生成成稿</p>');
+      return sendHtml(res, body ? previewPage(meta, localizeImages(body, pv[1])) : '<p>尚未生成成稿</p>');
+    }
+    const md = /^\/media\/([^/]+)\/(img\d{2}\.(?:png|jpg|gif|webp))$/.exec(url.pathname);
+    if (md && isValidId(md[1])) {
+      const file = path.join(jobDir(md[1]), 'materials', 'images', md[2]);
+      if (fs.existsSync(file)) {
+        res.writeHead(200, { 'Content-Type': `image/${md[2].endsWith('jpg') ? 'jpeg' : md[2].split('.').pop()}`, 'Cache-Control': 'no-store' });
+        return fs.createReadStream(file).pipe(res);
+      }
     }
     if (!serveStatic(res, PUBLIC, url.pathname)) sendJson(res, 404, { error: 'not found' });
   } catch (e) {

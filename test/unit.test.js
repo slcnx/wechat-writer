@@ -24,11 +24,10 @@ test('mergeSettings 校验与 Key 处理', () => {
 });
 
 test('Codex 配置不含 Key，Windows 路径正确转义', () => {
-  const s = cfg.mergeSettings(cfg.DEFAULTS, { apiKey: 'sk-secret', browserMcp: true });
+  const s = cfg.mergeSettings(cfg.DEFAULTS, { apiKey: 'sk-secret' });
   const t = cfg.buildCodexConfig(s);
   assert.match(t, /wire_api = "responses"/);
   assert.match(t, /env_key = "WX_WRITER_API_KEY"/);
-  assert.match(t, /\[mcp_servers\.playwright\]/);
   assert.doesNotMatch(t, /sk-secret/);
   assert.equal(JSON.parse('"C:\\\\Users\\\\a"'), 'C:\\Users\\a');
 });
@@ -69,12 +68,9 @@ test('previewPage 转义标题', () => {
   assert.match(html, /<div id="js_content"><p>正文<\/p><\/div>/);
 });
 
-test('文章 id 与文件名防穿越', () => {
+test('文章 id 防穿越', () => {
   assert.equal(jobs.isValidId('../../etc'), false);
   assert.throws(() => jobs.jobDir('..'));
-  assert.equal(jobs.safeFileName('../../a.md', 0), 'a.md');
-  assert.equal(jobs.safeFileName('.env', 3), 'file-3.txt');
-  assert.equal(jobs.safeFileName('成都 美食.md', 0), '成都_美食.md');
 });
 
 test('tokenFromUrl', () => {
@@ -87,7 +83,11 @@ test('readDevToolsPort 与填稿 prompt', () => {
   assert.equal(pub.readDevToolsPort(dir), null);
   fs.writeFileSync(path.join(dir, 'DevToolsActivePort'), '54321\n/devtools/browser/abc\n');
   assert.equal(pub.readDevToolsPort(dir), 54321);
-  assert.match(pub.buildPublishPrompt('/x/fill-mp.mjs'), /wechat-publish skill[\s\S]*\/x\/fill-mp\.mjs[\s\S]*严禁点击发表/);
+  assert.match(pub.buildPublishPrompt('/x/fill-mp.mjs'), /wechat-publish skill[\s\S]*\/x\/fill-mp\.mjs[\s\S]*严禁点击发表[\s\S]*用户指令：把这篇文章填进/);
+  assert.match(pub.buildPublishPrompt('/x', '把图3设为封面'), /用户指令：把图3设为封面/);
+  const a = pub.browserMcpArgs('http://127.0.0.1:5555');
+  assert.ok(a.includes('mcp_servers.browser.default_tools_approval_mode="approve"'));
+  assert.ok(a.some((x) => x.includes('--cdp-endpoint') && x.includes('http://127.0.0.1:5555') && x.includes('@playwright')));
 });
 
 test('codexEnv 暴露 node 与应用目录给 skill 脚本，不含明文 Key 以外的东西', () => {
@@ -96,4 +96,10 @@ test('codexEnv 暴露 node 与应用目录给 skill 脚本，不含明文 Key �
   assert.equal(env.WX_WRITER_API_KEY, 'sk-1');
   const pk = Object.keys(env).find((k) => k.toUpperCase() === 'PATH');
   assert.ok(env[pk].startsWith(path.dirname(process.execPath)));
+});
+
+test('finalReply 取 Codex 最后一条回复', () => {
+  const lines = ['codex', '中间过程', 'mcp: browser/browser_click started', 'codex', '**完成情况**', '- 已填入标题', 'tokens used', '42,914', '重复输出'];
+  assert.equal(pub.finalReply(lines), '完成情况 - 已填入标题');
+  assert.equal(pub.finalReply(['无']), '');
 });

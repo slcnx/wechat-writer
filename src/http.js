@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png' };
-const MAX_BODY = 40 * 1024 * 1024;
+const MAX_BODY = 120 * 1024 * 1024;
 
 export function readJson(req) {
   return new Promise((resolve, reject) => {
@@ -11,7 +11,7 @@ export function readJson(req) {
     let size = 0;
     req.on('data', (c) => {
       size += c.length;
-      if (size > MAX_BODY) { reject(new Error('请求体过大（上限 40MB）')); req.destroy(); return; }
+      if (size > MAX_BODY) { reject(new Error('请求体过大（一次上传合计上限约 80MB）')); req.destroy(); return; }
       chunks.push(c);
     });
     req.on('end', () => {

@@ -20,7 +20,7 @@ export function textOf(html) {
 }
 
 /** 返回 { ok, problems, warnings, chars }。problems 会阻止发布，warnings 只提示。 */
-export function validateArticle(meta, body) {
+export function validateArticle(meta, body, images = []) {
   const problems = [];
   const warnings = [];
   const chars = textOf(body).length;
@@ -31,12 +31,23 @@ export function validateArticle(meta, body) {
   if (/<(script|style|iframe)\b/i.test(body)) problems.push('正文仍含 script/style/iframe');
   if (/\sclass\s*=/i.test(body)) warnings.push('正文含 class 属性，粘贴到公众号后样式会丢失，应改为内联 style');
   if (/<a\s/i.test(body)) warnings.push('正文含超链接，非公众号文章链接在发布时会被去掉');
-  const imgs = body.match(/<img\b[^>]*>/gi) || [];
-  if (imgs.some((t) => /src\s*=\s*["'](?!https?:)/i.test(t))) warnings.push('有本地图片，需在公众号编辑器里重新上传');
-  return { ok: problems.length === 0, problems, warnings, chars };
+  const srcs = (body.match(/<img\b[^>]*>/gi) || []).map((t) => (/src\s*=\s*["']([^"']*)["']/i.exec(t) || [])[1] || '');
+  const known = new Set(images.map((m) => m.src));
+  const missing = srcs.filter((s) => s.startsWith('images/') && !known.has(s));
+  if (missing.length) problems.push(`正文引用了不存在的图片：${missing.join('、')}`);
+  if (srcs.some((s) => !/^(images\/|https?:)/.test(s))) warnings.push('有无法识别的图片地址（只支持素材图片 images/… 或 https 链接）');
+  const used = srcs.filter((s) => known.has(s)).length;
+  if (meta?.cover && !images.some((m) => m.id === meta.cover)) warnings.push(`封面 ${meta.cover} 不在图片素材里，填稿时将跳过封面`);
+  if (images.length && !used) warnings.push(`上传了 ${images.length} 张图片但正文一张都没用，可在修改意见里指定，如"图1放开头"`);
+  return { ok: problems.length === 0, problems, warnings, chars, images: used };
 }
 
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+/** 素材图片 src="images/x" 改成应用内地址，供预览与复制使用。 */
+export function localizeImages(body, id) {
+  return String(body).replace(/(<img\b[^>]*\bsrc\s*=\s*["'])images\/([\w.-]+)(["'])/gi, `$1/media/${id}/$2$3`);
+}
 
 /** 模拟手机阅读宽度的预览页。 */
 export function previewPage(meta, body) {
