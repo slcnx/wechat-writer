@@ -1,0 +1,83 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+
+process.env.WX_WRITER_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'wxw-'));
+const cfg = await import('../src/config.js');
+const art = await import('../src/article.js');
+const jobs = await import('../src/jobs.js');
+const pub = await import('../src/publisher.js');
+
+test('mergeSettings 校验与 Key 处理', () => {
+  const s = cfg.mergeSettings(cfg.DEFAULTS, { baseUrl: 'http://10.0.0.1:8317/v1/', apiKey: 'sk-abc123' });
+  assert.equal(s.baseUrl, 'http://10.0.0.1:8317/v1');
+  assert.equal(s.apiKey, 'sk-abc123');
+  assert.equal(cfg.mergeSettings(s, { apiKey: '' }).apiKey, 'sk-abc123', '空串保持不变');
+  assert.equal(cfg.mergeSettings(s, { apiKey: null }).apiKey, '', 'null 清空');
+  assert.throws(() => cfg.mergeSettings(s, { baseUrl: 'ftp://x' }));
+  assert.throws(() => cfg.mergeSettings(s, { model: 'a b' }));
+  assert.throws(() => cfg.mergeSettings(s, { browser: 'firefox' }));
+  assert.deepEqual(cfg.publicSettings(s).apiKeyHint, '****c123');
+  assert.equal('apiKey' in cfg.publicSettings(s), false);
+});
+
+test('Codex 配置不含 Key，Windows 路径正确转义', () => {
+  const s = cfg.mergeSettings(cfg.DEFAULTS, { apiKey: 'sk-secret', browserMcp: true });
+  const t = cfg.buildCodexConfig(s);
+  assert.match(t, /wire_api = "responses"/);
+  assert.match(t, /env_key = "WX_WRITER_API_KEY"/);
+  assert.match(t, /\[mcp_servers\.playwright\]/);
+  assert.doesNotMatch(t, /sk-secret/);
+  assert.equal(JSON.parse('"C:\\\\Users\\\\a"'), 'C:\\Users\\a');
+});
+
+test('Windows 上自动启用 unelevated 沙箱', () => {
+  assert.match(cfg.buildCodexConfig(cfg.DEFAULTS, 'win32'), /\[windows\]\nsandbox = "unelevated"/);
+  assert.doesNotMatch(cfg.buildCodexConfig(cfg.DEFAULTS, 'darwin'), /\[windows\]/);
+  assert.doesNotMatch(cfg.buildCodexConfig({ ...cfg.DEFAULTS, sandbox: 'danger-full-access' }, 'win32'), /\[windows\]/);
+});
+
+test('prepareCodexHome 同步内置 skills', () => {
+  const home = cfg.prepareCodexHome(cfg.DEFAULTS);
+  assert.ok(fs.existsSync(path.join(home, 'skills', 'wechat-article', 'SKILL.md')));
+  assert.ok(fs.existsSync(path.join(home, 'skills', 'wechat-article', 'references', 'style.md')));
+  assert.ok(fs.existsSync(path.join(home, 'config.toml')));
+});
+
+test('sanitizeBody 去掉脚本/样式/事件', () => {
+  const dirty = '<html><head><style>p{}</style></head><body><p onclick="x()">hi</p><script>alert(1)</script><link rel=x><a href="javascript:alert(1)">a</a></body></html>';
+  const clean = art.sanitizeBody(dirty);
+  assert.equal(clean, '<p>hi</p><a href="#">a</a>');
+});
+
+test('validateArticle 规则', () => {
+  const long = `<p style="x">${'字'.repeat(300)}</p>`;
+  assert.equal(art.validateArticle({ title: '好标题' }, long).ok, true);
+  const bad = art.validateArticle({ title: '超'.repeat(65) }, '<p>短</p>');
+  assert.equal(bad.ok, false);
+  assert.equal(bad.problems.length, 2);
+  const w = art.validateArticle({ title: 't' }, `${long}<p class="a">x</p>`);
+  assert.equal(w.ok, true);
+  assert.equal(w.warnings.length, 1);
+});
+
+test('previewPage 转义标题', () => {
+  const html = art.previewPage({ title: '<b>x</b>' }, '<p>正文</p>');
+  assert.match(html, /&lt;b&gt;x&lt;\/b&gt;/);
+  assert.match(html, /<div id="js_content"><p>正文<\/p><\/div>/);
+});
+
+test('文章 id 与文件名防穿越', () => {
+  assert.equal(jobs.isValidId('../../etc'), false);
+  assert.throws(() => jobs.jobDir('..'));
+  assert.equal(jobs.safeFileName('../../a.md', 0), 'a.md');
+  assert.equal(jobs.safeFileName('.env', 3), 'file-3.txt');
+  assert.equal(jobs.safeFileName('成都 美食.md', 0), '成都_美食.md');
+});
+
+test('tokenFromUrl', () => {
+  assert.equal(pub.tokenFromUrl('https://mp.weixin.qq.com/cgi-bin/home?t=home/index&lang=zh_CN&token=123456'), '123456');
+  assert.equal(pub.tokenFromUrl('https://mp.weixin.qq.com/'), null);
+});

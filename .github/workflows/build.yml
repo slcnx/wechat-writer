@@ -1,0 +1,127 @@
+# 公众号写作助手：三端测试 → 六个平台便携包 → 各平台原生 runner 冒烟 → 打 tag 时发布 Release
+name: build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  NODE_VERSION: 24.22.3
+
+jobs:
+  test:
+    name: test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: npm test
+
+  package:
+    name: package (${{ matrix.target }})
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [win-x64, win-arm64, mac-x64, mac-arm64, linux-x64, linux-arm64]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - run: node scripts/build-dist.mjs ${{ matrix.target }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wechat-writer-${{ matrix.target }}
+          path: |
+            dist/wechat-writer-*.zip
+            dist/wechat-writer-*.tar.gz
+          compression-level: 0
+          retention-days: 14
+
+  smoke:
+    name: smoke (${{ matrix.target }})
+    needs: package
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: linux-x64, runner: ubuntu-latest }
+          - { target: linux-arm64, runner: ubuntu-24.04-arm }
+          - { target: win-x64, runner: windows-latest }
+          - { target: win-arm64, runner: windows-11-arm }
+          - { target: mac-arm64, runner: macos-latest }
+          - { target: mac-x64, runner: macos-15-intel }
+    runs-on: ${{ matrix.runner }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: wechat-writer-${{ matrix.target }}
+          path: pkg
+      - name: 解压
+        run: |
+          cd pkg
+          for f in wechat-writer-*; do
+            case "$f" in
+              *.zip) unzip -q "$f" ;;
+              *.tar.gz) tar -xzf "$f" ;;
+            esac
+          done
+          ls
+      - name: 自带运行时与 Codex 可执行
+        run: |
+          cd pkg/wechat-writer-*/
+          NODE=./runtime/node; [ -f ./runtime/node.exe ] && NODE=./runtime/node.exe
+          "$NODE" -p "process.platform + '-' + process.arch"
+          "$NODE" node_modules/@openai/codex/bin/codex.js --version
+      - name: 启动应用并调用接口
+        env:
+          WX_WRITER_PORT: '18848'
+        run: |
+          cd pkg/wechat-writer-*/
+          export WX_WRITER_HOME="$RUNNER_TEMP/wxw-home"
+          NODE=./runtime/node; [ -f ./runtime/node.exe ] && NODE=./runtime/node.exe
+          "$NODE" src/server.js --no-open > server.log 2>&1 &
+          for _ in $(seq 1 30); do curl -sf http://127.0.0.1:18848/api/settings && break; sleep 1; done
+          echo
+          curl -sf http://127.0.0.1:18848/ | grep -q '公众号写作助手'
+          curl -sf -X POST http://127.0.0.1:18848/api/settings -H 'Content-Type: application/json' \
+            -d '{"baseUrl":"https://api.deepseek.com/v1","model":"deepseek-chat"}' | grep -q 'api.deepseek.com'
+          cat server.log
+          kill %1 || true
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: out
+          merge-multiple: true
+      - name: 校验和
+        run: cd out && sha256sum wechat-writer-* > SHA256SUMS.txt && cat SHA256SUMS.txt
+      - name: 发布 Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" out/* \
+            --repo "$GITHUB_REPOSITORY" --title "公众号写作助手 $GITHUB_REF_NAME" --generate-notes

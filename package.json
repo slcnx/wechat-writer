@@ -1,0 +1,21 @@
+{
+  "name": "wechat-writer",
+  "version": "0.1.0",
+  "description": "公众号写作助手：开源 Codex CLI + DeepSeek（OpenAI 兼容网关）+ 内置 skill + 浏览器发布",
+  "type": "module",
+  "private": true,
+  "bin": {
+    "wechat-writer": "src/server.js"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node --test test/*.test.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@openai/codex": "0.171.0",
+    "playwright-core": "^1.65.1"
+  }
+}
