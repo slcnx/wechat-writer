@@ -81,3 +81,19 @@ test('tokenFromUrl', () => {
   assert.equal(pub.tokenFromUrl('https://mp.weixin.qq.com/cgi-bin/home?t=home/index&lang=zh_CN&token=123456'), '123456');
   assert.equal(pub.tokenFromUrl('https://mp.weixin.qq.com/'), null);
 });
+
+test('readDevToolsPort 与填稿 prompt', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wxw-prof-'));
+  assert.equal(pub.readDevToolsPort(dir), null);
+  fs.writeFileSync(path.join(dir, 'DevToolsActivePort'), '54321\n/devtools/browser/abc\n');
+  assert.equal(pub.readDevToolsPort(dir), 54321);
+  assert.match(pub.buildPublishPrompt('/x/fill-mp.mjs'), /wechat-publish skill[\s\S]*\/x\/fill-mp\.mjs[\s\S]*严禁点击发表/);
+});
+
+test('codexEnv 暴露 node 与应用目录给 skill 脚本，不含明文 Key 以外的东西', () => {
+  const env = cfg.codexEnv({ ...cfg.DEFAULTS, apiKey: 'sk-1' });
+  assert.equal(env.WX_WRITER_NODE, process.execPath);
+  assert.equal(env.WX_WRITER_API_KEY, 'sk-1');
+  const pk = Object.keys(env).find((k) => k.toUpperCase() === 'PATH');
+  assert.ok(env[pk].startsWith(path.dirname(process.execPath)));
+});

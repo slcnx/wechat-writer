@@ -5,8 +5,8 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { APP_ROOT, loadSettings, saveSettings, publicSettings } from './config.js';
 import { readJson, sendJson, sendHtml, serveStatic } from './http.js';
-import { createJob, reviseJob, getJob, listJobs, readArticle, isValidId } from './jobs.js';
-import { previewPage, textOf } from './article.js';
+import { createJob, reviseJob, getJob, listJobs, readArticle, isValidId, jobDir } from './jobs.js';
+import { previewPage } from './article.js';
 import { fillDraft, openMp, state as publishState } from './publisher.js';
 
 const PORT = Number(process.env.WX_WRITER_PORT || 8848);
@@ -60,7 +60,7 @@ async function api(req, res, url) {
     const a = readArticle(id);
     if (!a.check.ok) return sendJson(res, 400, { error: `成稿未通过校验：${a.check.problems.join('；')}` });
     if (['opening', 'login', 'editing'].includes(publishState.phase)) return sendJson(res, 409, { error: '已有发布流程在进行' });
-    fillDraft({ ...a, id, plain: textOf(a.body) }, settings); // 后台执行，前端轮询 publish-status
+    fillDraft({ id, dir: jobDir(id) }, settings); // 后台执行（Codex + wechat-publish skill），前端轮询 publish-status
     return sendJson(res, 200, { started: true });
   }
   return sendJson(res, 404, { error: '接口不存在' });

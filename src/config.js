@@ -118,6 +118,16 @@ export function prepareCodexHome(s) {
   return home;
 }
 
+/** Codex 运行环境：便携包里没有全局 node，把应用自带的 node 放进 PATH 并告诉 skill 脚本。 */
 export function codexEnv(s) {
-  return { ...process.env, CODEX_HOME: paths.codexHome(), [API_KEY_ENV]: s.apiKey || 'sk-no-key' };
+  const nodeDir = path.dirname(process.execPath);
+  const pathKey = Object.keys(process.env).find((k) => k.toUpperCase() === 'PATH') || 'PATH';
+  return {
+    ...process.env,
+    [pathKey]: `${nodeDir}${path.delimiter}${process.env[pathKey] || ''}`,
+    CODEX_HOME: paths.codexHome(),
+    WX_WRITER_NODE: process.execPath,
+    WX_WRITER_APP_ROOT: APP_ROOT,
+    [API_KEY_ENV]: s.apiKey || 'sk-no-key',
+  };
 }

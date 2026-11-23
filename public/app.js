@@ -161,6 +161,8 @@ $('btnPublish').onclick = async () => {
 async function watchPublish() {
   const s = await call('/api/publish-status');
   msg($('pubMsg'), s.message, s.phase === 'error' ? 'err' : s.phase === 'ready' ? 'ok' : '');
+  const pl = $('pubLog');
+  if (s.log?.length) { pl.classList.remove('hidden'); pl.textContent = s.log.slice(-80).join('\n'); pl.scrollTop = pl.scrollHeight; }
   if (['opening', 'login', 'editing'].includes(s.phase)) setTimeout(watchPublish, 1500);
 }
 

@@ -33,10 +33,10 @@ export function buildRevisePrompt(instruction) {
  * 运行 codex exec。prompt 走 stdin（避免 Windows 命令行对中文/引号的转义问题）。
  * onLog(line) 逐行回调；返回 { code, cancel }，其中 done 为 Promise。
  */
-export function runCodex({ cwd, prompt, settings, onLog = () => {}, timeoutMs = 15 * 60 * 1000 }) {
+export function runCodex({ cwd, prompt, settings, extraArgs = [], onLog = () => {}, timeoutMs = 15 * 60 * 1000 }) {
   prepareCodexHome(settings);
   const { cmd, pre, shell } = codexCommand();
-  const args = [...pre, 'exec', '--skip-git-repo-check', '-s', settings.sandbox, '-C', cwd, '-'];
+  const args = [...pre, 'exec', '--skip-git-repo-check', '-s', settings.sandbox, ...extraArgs, '-C', cwd, '-'];
   const child = spawn(cmd, args, { cwd, env: codexEnv(settings), shell, windowsHide: true });
   const pump = (stream) => {
     let buf = '';

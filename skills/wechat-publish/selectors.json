@@ -1,0 +1,8 @@
+{
+  "_note": "2026-11 实测公众号新版编辑器：标题和正文都是 ProseMirror，必须按容器区分；#ueditor_0 现为 div，旧版才是 iframe",
+  "editorTypes": ["77", "10"],
+  "title": ["#js_title_main .ProseMirror", "#title", "textarea[placeholder*=\"标题\"]", "input[placeholder*=\"标题\"]"],
+  "author": ["#author", "input[placeholder*=\"作者\"]"],
+  "digest": ["#js_description", "textarea[placeholder*=\"摘要\"]"],
+  "body": ["#ueditor_0 .ProseMirror", ".rich_media_content.ProseMirror", "iframe#ueditor_0"]
+}

@@ -1,6 +1,6 @@
 {
   "name": "wechat-writer",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "公众号写作助手：开源 Codex CLI + DeepSeek（OpenAI 兼容网关）+ 内置 skill + 浏览器发布",
   "type": "module",
   "private": true,
