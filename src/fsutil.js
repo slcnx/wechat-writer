@@ -11,7 +11,7 @@ export function writeFileAtomic(file, data, mode) {
 
 export function readJsonSafe(file, fallback) {
   try {
-    return JSON.parse(fs.readFileSync(file, 'utf8'));
+    return JSON.parse(fs.readFileSync(file, 'utf8').replace(/^\uFEFF/, '')); // 容忍 PowerShell 写出的 BOM
   } catch {
     return fallback;
   }

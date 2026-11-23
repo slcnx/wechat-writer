@@ -78,16 +78,15 @@ test('tokenFromUrl', () => {
   assert.equal(pub.tokenFromUrl('https://mp.weixin.qq.com/'), null);
 });
 
-test('readDevToolsPort 与填稿 prompt', () => {
+test('readDevToolsPort 与浏览器工具参数', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wxw-prof-'));
   assert.equal(pub.readDevToolsPort(dir), null);
   fs.writeFileSync(path.join(dir, 'DevToolsActivePort'), '54321\n/devtools/browser/abc\n');
   assert.equal(pub.readDevToolsPort(dir), 54321);
-  assert.match(pub.buildPublishPrompt('/x/fill-mp.mjs'), /wechat-publish skill[\s\S]*\/x\/fill-mp\.mjs[\s\S]*严禁点击发表[\s\S]*用户指令：把这篇文章填进/);
-  assert.match(pub.buildPublishPrompt('/x', '把图3设为封面'), /用户指令：把图3设为封面/);
   const a = pub.browserMcpArgs('http://127.0.0.1:5555');
   assert.ok(a.includes('mcp_servers.browser.default_tools_approval_mode="approve"'));
-  assert.ok(a.some((x) => x.includes('--cdp-endpoint') && x.includes('http://127.0.0.1:5555') && x.includes('@playwright')));
+  assert.ok(a.some((x) => x.includes('--cdp-endpoint') && x.includes('http://127.0.0.1:5555') && x.includes('"omit"')));
+  assert.ok(a.includes('sandbox_workspace_write.network_access=true'));
 });
 
 test('codexEnv 暴露 node 与应用目录给 skill 脚本，不含明文 Key 以外的东西', () => {
@@ -98,8 +97,20 @@ test('codexEnv 暴露 node 与应用目录给 skill 脚本，不含明文 Key �
   assert.ok(env[pk].startsWith(path.dirname(process.execPath)));
 });
 
-test('finalReply 取 Codex 最后一条回复', () => {
-  const lines = ['codex', '中间过程', 'mcp: browser/browser_click started', 'codex', '**完成情况**', '- 已填入标题', 'tokens used', '42,914', '重复输出'];
-  assert.equal(pub.finalReply(lines), '完成情况 - 已填入标题');
-  assert.equal(pub.finalReply(['无']), '');
+
+test('Windows 下写入 UTF-8 须知 AGENTS.md，其他平台不写', () => {
+  const home = cfg.prepareCodexHome(cfg.DEFAULTS, 'win32');
+  const md = fs.readFileSync(path.join(home, 'AGENTS.md'), 'utf8');
+  assert.match(md, /Get-Content -Raw -Encoding UTF8/);
+  assert.match(md, /OutputEncoding/);
+  assert.match(fs.readFileSync(path.join(home, 'config.toml'), 'utf8'), /\[windows\]/);
+  cfg.prepareCodexHome(cfg.DEFAULTS, 'darwin');
+  assert.equal(fs.existsSync(path.join(home, 'AGENTS.md')), false);
+});
+
+test('readJsonSafe 容忍 BOM', async () => {
+  const { readJsonSafe } = await import('../src/fsutil.js');
+  const f = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'wxw-bom-')), 'a.json');
+  fs.writeFileSync(f, '\uFEFF{"title":"标题"}');
+  assert.equal(readJsonSafe(f, null).title, '标题');
 });

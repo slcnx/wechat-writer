@@ -9,12 +9,13 @@
 <body>
 <header>
   <h1>公众号写作助手</h1>
-  <span class="sub">给素材 → 出文章 → 预览 → 一键填入公众号</span>
+  <span class="sub">对话写公众号：给素材 → 出文章 → 预览 → 填入公众号</span>
   <button id="btnSettings" class="ghost">⚙ 设置</button>
 </header>
 
 <main>
-  <section id="paneSettings" class="card hidden">
+  <div id="settingsMask" class="mask hidden"></div>
+  <section id="paneSettings" class="card modal hidden">
     <h2>① 接口设置（只需配置一次）</h2>
     <p class="hint">没有 Key？到 <a href="https://platform.deepseek.com/api_keys" target="_blank" rel="noopener">DeepSeek 开放平台</a> 注册、充值后创建 API Key，复制粘贴到下面。</p>
     <div class="actions"><button id="presetDeepseek" class="ghost" type="button">使用 DeepSeek 官方</button><span class="hint">也可填任何支持 Responses API 的 OpenAI 兼容地址</span></div>
@@ -33,60 +34,48 @@
     <div class="actions">
       <button id="btnTest" class="ghost">刷新模型列表</button>
       <button id="btnSave">保存</button>
+      <button id="btnCloseSettings" class="ghost" type="button">关闭</button>
       <span id="settingsMsg" class="msg"></span>
     </div>
   </section>
 
   <div class="grid">
-    <section class="card">
-      <h2>② 给素材</h2>
-      <label>标题方向（可空，让 AI 起）<input id="title" maxlength="64"></label>
-      <div class="two">
-        <label>文风
-          <select id="style"><option>干货科普</option><option>故事叙事</option><option>资讯快报</option><option>观点评论</option><option>探店种草</option></select>
-        </label>
-        <label>篇幅
-          <select id="length"><option>800-1200 字</option><option selected>1500-2500 字</option><option>3000-4000 字</option></select>
-        </label>
-      </div>
-      <label>目标读者<input id="audience" placeholder="例：在成都生活的上班族"></label>
-      <label>素材（粘贴文字、要点、采访记录、链接文字都行）<textarea id="materials" rows="10"></textarea></label>
-      <label>素材文件：图片（jpg/png/gif/webp，按顺序编号为 图1、图2…）、Word（.docx）、PDF、txt/md/html/csv，可多次添加
-        <input id="files" type="file" multiple accept=".png,.jpg,.jpeg,.gif,.webp,.docx,.pdf,.txt,.md,.markdown,.html,.htm,.csv,.json"></label>
-      <div id="fileList" class="mat-list"></div>
-      <label>额外要求（可空）<input id="extra" placeholder="例：主色用 #c0392b；结尾引导关注"></label>
-      <div class="actions"><button id="btnGenerate">生成文章</button><span id="genMsg" class="msg"></span></div>
-      <pre id="log" class="log hidden"></pre>
-      <h3>历史文章</h3>
+    <aside class="card side">
+      <button id="btnNew" type="button">＋ 新文章</button>
       <ul id="history" class="history"></ul>
+    </aside>
+
+    <section class="card chat-card">
+      <div id="chat" class="chat">
+        <div class="bubble ai">你好！把想写的内容告诉我：直接说主题，或者粘贴素材、上传图片 / Word / PDF。<br>写完后可以继续说"图2放开头""标题短一点""填进公众号""把图3设为封面"……都在这里说就行。</div>
+      </div>
+      <div id="status" class="status hidden"></div>
+      <details id="logBox" class="hidden"><summary>查看 AI 执行过程</summary><pre id="log" class="log"></pre></details>
+      <div class="composer">
+        <div id="fileList" class="mat-list"></div>
+        <textarea id="msg" rows="3" placeholder="说点什么…（Ctrl/⌘ + Enter 发送）"></textarea>
+        <div class="actions">
+          <label class="attach">📎 图片 / 材料<input id="files" type="file" multiple hidden accept=".png,.jpg,.jpeg,.gif,.webp,.docx,.pdf,.txt,.md,.markdown,.html,.htm,.csv,.json"></label>
+          <span class="hint grow">图片自动编号 图1、图2…，也可传 Word / PDF</span>
+          <button id="btnSend">发送</button>
+        </div>
+      </div>
     </section>
 
-    <section class="card">
-      <h2>③ 预览与发布</h2>
+    <section class="card preview-card">
+      <h2>预览</h2>
       <div id="checkBox" class="check hidden"></div>
       <iframe id="preview" title="预览"></iframe>
-      <div class="actions wrap">
-        <button id="btnCopy" class="ghost" disabled>复制富文本</button>
-        <button id="btnOpenMp" class="ghost">打开公众号后台</button>
-        <button id="btnPublish" disabled>一键填入公众号草稿</button>
-      </div>
       <div id="gallery" class="mat-list hidden"></div>
-      <div class="actions">
-        <input id="revise" placeholder="修改意见，例：图2放开头做头图；删掉图3；第二节加一个例子">
-        <button id="btnRevise" class="ghost" disabled>按意见修改</button>
+      <div class="actions wrap">
+        <button id="btnCopy" class="ghost" disabled>复制富文本（手动粘贴用）</button>
+        <span id="pubMsg" class="msg"></span>
       </div>
-      <label class="small">补充图片/文档（可选，图片接着现有编号）<input id="reviseFiles" type="file" multiple accept=".png,.jpg,.jpeg,.gif,.webp,.docx,.pdf,.txt,.md,.markdown,.html,.htm,.csv,.json"></label>
-      <div id="reviseList" class="mat-list"></div>
-      <div class="actions">
-        <input id="browserCmd" placeholder="浏览器指令，例：把图3设为封面；标题改成…；截图看看排版（在已打开的公众号编辑器里执行）">
-        <button id="btnBrowserCmd" class="ghost" disabled>让 AI 去做</button>
-      </div>
-      <p id="pubMsg" class="msg"></p>
-      <pre id="pubLog" class="log hidden"></pre>
     </section>
   </div>
 </main>
 <script src="/materials.js"></script>
 <script src="/app.js"></script>
+<script src="/chat.js"></script>
 </body>
 </html>

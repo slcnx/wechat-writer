@@ -12,35 +12,24 @@ export function codexCommand() {
   return { cmd: 'codex', pre: [], shell: process.platform === 'win32' };
 }
 
-export function buildWritePrompt(brief, imagesText = '') {
-  return [
-    '使用 wechat-article skill 完成任务。',
-    '素材在当前目录的 materials/ 下，写作要求在 brief.json。',
-    imagesText,
-    '把成稿写到 out/article.body.html 和 out/meta.json，格式严格按 skill 规定。',
-    brief.title ? `标题方向：${brief.title}` : '',
-  ].filter(Boolean).join('\n');
+/** 组装 codex exec 参数：首轮新建会话；有 resumeId 时用 exec resume 接着同一个会话聊。 */
+export function codexArgs({ cwd, settings, extraArgs = [], resumeId = '', lastMessageFile = '' }) {
+  // 写公众号用不到生图；看图开关由调用方按模型能力决定
+  const common = ['--skip-git-repo-check', '--disable', 'image_generation', ...extraArgs, ...(lastMessageFile ? ['-o', lastMessageFile] : [])];
+  if (resumeId) return ['exec', 'resume', ...common, '-c', `sandbox_mode=${JSON.stringify(settings.sandbox)}`, resumeId, '-'];
+  return ['exec', ...common, '-s', settings.sandbox, '-C', cwd, '-'];
 }
 
-export function buildRevisePrompt(instruction, imagesText = '', added = []) {
-  return [
-    '使用 wechat-article skill 修改已有成稿。',
-    '先读 out/article.body.html、out/meta.json 和 materials/，按下面的修改意见改写，并覆盖原文件。',
-    imagesText,
-    added.length ? `本次新补充的素材：${added.join('、')}` : '',
-    `修改意见：${instruction}`,
-  ].filter(Boolean).join('\n');
-}
+export const SESSION_RE = /session id:\s*([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i;
 
 /**
  * 运行 codex exec。prompt 走 stdin（避免 Windows 命令行对中文/引号的转义问题）。
- * onLog(line) 逐行回调；返回 { code, cancel }，其中 done 为 Promise。
+ * onLog(line) 逐行回调；返回 { done, cancel }，done 解析为退出码。
  */
-export function runCodex({ cwd, prompt, settings, extraArgs = [], onLog = () => {}, timeoutMs = 15 * 60 * 1000 }) {
+export function runCodex({ cwd, prompt, settings, extraArgs = [], resumeId = '', lastMessageFile = '', onLog = () => {}, timeoutMs = 15 * 60 * 1000 }) {
   prepareCodexHome(settings);
   const { cmd, pre, shell } = codexCommand();
-  // 写公众号用不到生图；看图开关由调用方按模型能力决定
-  const args = [...pre, 'exec', '--skip-git-repo-check', '-s', settings.sandbox, '--disable', 'image_generation', ...extraArgs, '-C', cwd, '-'];
+  const args = [...pre, ...codexArgs({ cwd, settings, extraArgs, resumeId, lastMessageFile })];
   const child = spawn(cmd, args, { cwd, env: codexEnv(settings), shell, windowsHide: true });
   const pump = (stream) => {
     let buf = '';

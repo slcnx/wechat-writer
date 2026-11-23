@@ -107,10 +107,23 @@ export function buildCodexConfig(s, platform = process.platform) {
   return lines.join('\n') + '\n';
 }
 
-/** 写 config.toml 并把内置 skills 同步到 CODEX_HOME/skills。 */
-export function prepareCodexHome(s) {
+// Windows PowerShell 5.1 默认按 GBK 读写文本，UTF-8 中文会被读成乱码（模型看到的也是乱码）
+export const WINDOWS_AGENTS_MD = `# Windows 环境须知（全局）
+
+你的 shell 是 Windows PowerShell 5.1，它默认用 GBK 读写文本，会把本项目的 UTF-8 中文读成乱码。必须：
+
+- 每条命令开头加：\`[Console]::OutputEncoding = [Text.Encoding]::UTF8;\`
+- 读文本一律：\`Get-Content -Raw -Encoding UTF8 <路径>\`（不要裸用 Get-Content / cat / type）。
+- 写文件优先用 apply_patch；必须用命令写时：\`[IO.File]::WriteAllText('<路径>', $text, (New-Object Text.UTF8Encoding $false))\`（UTF-8 无 BOM，JSON 尤其不能带 BOM）。
+- 如果读到的中文像"鍐欐硶""鏍囬"这类乱码，说明编码错了，按上面的方法重新读，不要基于乱码内容继续工作。
+`;
+
+/** 写 config.toml、Windows 下的全局 AGENTS.md，并把内置 skills 同步到 CODEX_HOME/skills。 */
+export function prepareCodexHome(s, platform = process.platform) {
   const home = paths.codexHome();
-  writeFileAtomic(path.join(home, 'config.toml'), buildCodexConfig(s));
+  writeFileAtomic(path.join(home, 'config.toml'), buildCodexConfig(s, platform));
+  if (platform === 'win32') writeFileAtomic(path.join(home, 'AGENTS.md'), WINDOWS_AGENTS_MD);
+  else fs.rmSync(path.join(home, 'AGENTS.md'), { force: true });
   const src = path.join(APP_ROOT, 'skills');
   const dst = path.join(home, 'skills');
   for (const name of fs.readdirSync(src)) {

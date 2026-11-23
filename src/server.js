@@ -5,10 +5,11 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { APP_ROOT, loadSettings, saveSettings, publicSettings, mergeSettings } from './config.js';
 import { readJson, sendJson, sendHtml, serveStatic } from './http.js';
-import { createJob, reviseJob, getJob, listJobs, readArticle, isValidId, jobDir } from './jobs.js';
+import { getJob, listJobs, readArticle, readChat, isValidId, jobDir } from './jobs.js';
 import { previewPage, localizeImages } from './article.js';
 import fs from 'node:fs';
-import { fillDraft, openMp, state as publishState } from './publisher.js';
+import { sendMessage } from './chat.js';
+import { browserReady } from './publisher.js';
 
 const PORT = Number(process.env.WX_WRITER_PORT || 8848);
 const PUBLIC = path.join(APP_ROOT, 'public');
@@ -25,7 +26,6 @@ async function listModels(s) {
 
 async function api(req, res, url) {
   const p = url.pathname;
-  const m = /^\/api\/(jobs|articles|publish)\/([^/]+)(\/[a-z]+)?$/.exec(p);
   const settings = loadSettings();
 
   if (p === '/api/settings' && req.method === 'GET') return sendJson(res, 200, publicSettings(settings));
@@ -36,37 +36,22 @@ async function api(req, res, url) {
     const models = await listModels(probe);
     return sendJson(res, 200, { models, current: settings.model, vision: settings.visionModel, available: models.includes(settings.model) });
   }
-  if (p === '/api/jobs' && req.method === 'GET') return sendJson(res, 200, { jobs: listJobs() });
-  if (p === '/api/generate' && req.method === 'POST') {
-    const job = await createJob(await readJson(req), settings);
-    return sendJson(res, 200, { id: job.id });
+  if (p === '/api/jobs' && req.method === 'GET') return sendJson(res, 200, { jobs: listJobs(), browser: browserReady() });
+  // 唯一入口：一条消息（可带图片/文档），没有 id 就开一篇新文章
+  if (p === '/api/chat' && req.method === 'POST') {
+    const body = await readJson(req);
+    if (body.id && !isValidId(body.id)) return sendJson(res, 400, { error: '非法文章 id' });
+    return sendJson(res, 200, await sendMessage(body, settings));
   }
-  if (p === '/api/open-mp' && req.method === 'POST') {
-    await openMp(settings);
-    return sendJson(res, 200, { ok: true });
+  const m = /^\/api\/(jobs|articles)\/([^/]+)$/.exec(p);
+  if (!m || !isValidId(m[2]) || req.method !== 'GET') return sendJson(res, 404, { error: '接口不存在' });
+  const [, kind, id] = m;
+  if (!fs.existsSync(jobDir(id))) return sendJson(res, 404, { error: '文章不存在' });
+  if (kind === 'jobs') {
+    const { log = [], ...job } = getJob(id) || { id, status: 'idle' };
+    return sendJson(res, 200, { ...job, log: log.slice(-150), chat: readChat(id) });
   }
-  if (p === '/api/publish-status' && req.method === 'GET') return sendJson(res, 200, publishState);
-  if (!m || !isValidId(m[2])) return sendJson(res, 404, { error: '接口不存在' });
-
-  const [, kind, id, action = ''] = m;
-  if (kind === 'jobs' && !action && req.method === 'GET') {
-    const job = getJob(id);
-    return job ? sendJson(res, 200, job) : sendJson(res, 404, { error: '文章不存在' });
-  }
-  if (kind === 'jobs' && action === '/revise' && req.method === 'POST') {
-    await reviseJob(id, await readJson(req), settings);
-    return sendJson(res, 200, { id });
-  }
-  if (kind === 'articles' && !action && req.method === 'GET') return sendJson(res, 200, readArticle(id));
-  if (kind === 'publish' && !action && req.method === 'POST') {
-    const instruction = String((await readJson(req)).instruction || '').trim().slice(0, 1000);
-    const a = readArticle(id);
-    if (!instruction && !a.check.ok) return sendJson(res, 400, { error: `成稿未通过校验：${a.check.problems.join('；')}` });
-    if (['opening', 'login', 'editing'].includes(publishState.phase)) return sendJson(res, 409, { error: '已有发布流程在进行' });
-    fillDraft({ id, dir: jobDir(id), instruction }, settings); // 后台执行（Codex + wechat-publish skill），前端轮询 publish-status
-    return sendJson(res, 200, { started: true });
-  }
-  return sendJson(res, 404, { error: '接口不存在' });
+  return sendJson(res, 200, readArticle(id));
 }
 
 const server = http.createServer(async (req, res) => {

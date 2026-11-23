@@ -67,7 +67,7 @@
     if (!images.length) return;
     const head = document.createElement('div');
     head.className = 'hint';
-    head.textContent = '素材图片（点击把编号写进修改意见或浏览器指令，例如"图2放开头""图3做封面"）：';
+    head.textContent = '素材图片（点击把编号填进对话框，例如"图2放开头""图3做封面"）：';
     box.append(head);
     for (const m of images) {
       const item = document.createElement('div');
