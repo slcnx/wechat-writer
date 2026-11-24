@@ -8,7 +8,7 @@ import { runCodex, SESSION_RE } from './codex.js';
 import { live, jobDir, newId, persist, getJob, appendChat, readChat, readSession, saveSession, readArticle } from './jobs.js';
 import { decodeFiles, saveMaterials, readImages, describeImages as listImages } from './materials.js';
 import { describeImages as visionDescribe } from './vision.js';
-import { ensureBrowser, browserReady, browserMcpArgs } from './publisher.js';
+import { ensureBrowser, browserMcpArgs } from './publisher.js';
 import { writeFileAtomic } from './fsutil.js';
 
 const MAX_LOG = 400;
@@ -17,11 +17,13 @@ const TEXT_ONLY = ['--disable', 'view_image'];
 const noVision = new Set(); // 已确认不支持图片输入的「地址|模型」
 const turns = new Map(); // id -> { cancel, reason, promise }：正在运行的一轮，用于插话/停止
 // 只认「要动公众号后台」的说法；「写一篇公众号文章」不该弹浏览器
-const BROWSER_WORDS = /填入|填进|填到|放进|贴进|贴到|发到|同步到|封面|发布|发表|编辑器|后台|群发|存.{0,3}草稿|草稿箱/;
+// 默认一切都改本地文章（右侧预览）；明确提到公众号后台/编辑器里操作才算
+const BROWSER_WORDS = /填入|填进|填到|放进|贴进|贴到|发到|同步到|(公众号|微信)(里|上|中|那边|后台|编辑器)|编辑器|后台|发布|发表|群发|存.{0,3}草稿|草稿箱/;
 
 export const ROLE = [
   '你是「公众号写作助手」，在当前文章目录里工作，和用户用中文对话。',
   '可用 skill：wechat-article（写稿、改稿，产出 out/article.body.html 与 out/meta.json）；wechat-publish（操作公众号后台编辑器，仅当说明里写了"浏览器：已登录"时可用）。',
+  '所有修改（文字、图片、封面、标签等）一律只改本地文章（out/ 下的文件，用户在应用右侧预览看到的就是它）；只有用户明确说在公众号/编辑器里改或填进公众号时，才操作公众号后台。',
   '每轮根据用户的话自己判断要做什么：写新稿、按意见改稿（含点名"图N"调整图片/封面）、把文章填进公众号或在编辑器里修改、回答问题。',
   '写稿前如果缺少关键信息——写什么主题、给谁看——且无法从素材推断，就先用一两句话向用户提问并结束本轮，不要硬写；文风、篇幅、标题等次要信息用户没说就根据素材自行决定。',
   '用户发来的文字、图片、文档都已保存在 materials/（图片清单 materials/images.json，图片编号 图N）。',
@@ -39,7 +41,7 @@ export function buildTurnPrompt({ first, message, added, imagesText, browser, sc
     `用户：${message || '（用户只上传了素材，没有附言）'}`,
     added.length ? `本轮新增素材：${added.join('、')}` : '',
     imagesText,
-    browser ? `浏览器：已登录公众号后台，可用 browser 工具与 wechat-publish skill（脚本：${script}；连接信息在 cdp.json）。严禁点击发表、群发、保存为草稿。` : '浏览器：未打开。用户要操作公众号时，回复请他说"填进公众号"等指令，应用会打开浏览器并请他扫码。',
+    browser ? `浏览器：已登录公众号后台，可用 browser 工具与 wechat-publish skill（脚本：${script}；连接信息在 cdp.json）。先把修改落到本地文章，再按用户要求同步到编辑器。严禁点击发表、群发、保存为草稿。` : '浏览器：本轮不可用。只修改本地文章（右侧预览），不要声称已同步到公众号；用户要操作公众号时，请他说"填进公众号"等指令。',
   ].filter(Boolean).join('\n');
 }
 
@@ -98,7 +100,7 @@ async function runTurn(job, ctx, { text, saved, images, interrupted }, settings)
   const dir = jobDir(job.id);
   const say = log(job);
   let endpoint = '';
-  if (wantsBrowser(text) || browserReady()) {
+  if (wantsBrowser(text)) {
     endpoint = await ensureBrowser(settings, (m) => { job.notice = m; say(`[浏览器] ${m}`); }, () => Boolean(ctx.reason));
     job.notice = '';
     writeFileAtomic(path.join(dir, 'cdp.json'), JSON.stringify({ endpoint, articleId: job.id }));

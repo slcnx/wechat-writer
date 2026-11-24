@@ -5,6 +5,8 @@ description: 在已登录的微信公众号后台按用户指令操作图文编�
 
 # 公众号编辑器操作 skill
 
+**只在用户明确要求操作公众号时使用**（如“填进公众号”“在公众号里改标题”）。普通的改稿、换图、改封面、加标签一律只改本地 `out/` 文件（应用右侧预览），不要顺手改编辑器。
+
 浏览器由「公众号写作助手」打开并已扫码登录。你有两类工具：
 
 - **browser 工具**（Playwright MCP，已连到这个浏览器）：`browser_tabs` 切换标签页、`browser_snapshot` 看页面结构、`browser_click` / `browser_hover` / `browser_type` 操作、`browser_evaluate` 读页面数据。**截图不会返回给你**（为兼容不支持图片的模型），验证一律用 `browser_snapshot` 或 `browser_evaluate` 读 DOM。
@@ -39,7 +41,7 @@ description: 在已登录的微信公众号后台按用户指令操作图文编�
 
 ### C. 改标题 / 作者 / 摘要 / 正文小改
 
-在当前编辑器标签页用 browser 工具改：标题 `#js_title_main .ProseMirror`，作者 `#author`，摘要 `#js_description`，正文 `#ueditor_0 .ProseMirror`。改正文前先 snapshot 定位到具体段落，只改指令涉及的部分。**同时把改动同步写回 `out/` 下对应文件**，保持应用里的预览一致。
+在当前编辑器标签页用 browser 工具改：标题 `#js_title_main .ProseMirror`，作者 `#author`，摘要 `#js_description`，正文 `#ueditor_0 .ProseMirror`。改正文前先 snapshot 定位到具体段落，只改指令涉及的部分。**先改 `out/` 下对应文件，再改编辑器**，保持应用里的预览与编辑器一致；回复用户前确认本地文件确实已改。
 
 ### D. 检查排版
 

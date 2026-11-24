@@ -5,8 +5,8 @@ import { codexArgs, SESSION_RE } from '../src/codex.js';
 import { DEFAULTS } from '../src/config.js';
 
 test('是否需要浏览器：按用户的话判断', () => {
-  for (const t of ['填进公众号', '把图3设为封面', '存到草稿', '打开公众号后台']) assert.ok(wantsBrowser(t), t);
-  for (const t of ['写一篇成都美食', '写一篇 600 字的公众号文章', '改一下这篇草稿', '图2放开头', '标题短一点']) assert.ok(!wantsBrowser(t), t);
+  for (const t of ['填进公众号', '在公众号里把图3设为封面', '存到草稿', '打开公众号后台', '编辑器里标题改短']) assert.ok(wantsBrowser(t), t);
+  for (const t of ['写一篇成都美食', '写一篇 600 字的公众号文章', '改一下这篇草稿', '把图3设为封面', '文末添加 #xxx 类似的标签', '图2放开头', '标题短一点']) assert.ok(!wantsBrowser(t), t);
 });
 
 test('首轮带角色说明（含信息不足先追问），续聊只带本轮内容', () => {
@@ -15,7 +15,8 @@ test('首轮带角色说明（含信息不足先追问），续聊只带本轮�
   assert.match(first, /先用一两句话向用户提问/);
   assert.match(first, /用户：写钟水饺/);
   assert.match(first, /本轮新增素材：图1/);
-  assert.match(first, /浏览器：未打开/);
+  assert.match(first, /浏览器：本轮不可用。只修改本地文章/);
+  assert.match(first, /一律只改本地文章/);
   const next = buildTurnPrompt({ first: false, message: '填进公众号', added: [], imagesText: '', browser: true, script: '/s.mjs' });
   assert.ok(!next.includes(ROLE));
   assert.match(next, /继续同一篇文章/);
