@@ -18,6 +18,9 @@ async function loadSettings() {
   $('apiKey').value = '';
   $('apiKey').placeholder = saved.hasKey ? `已保存 ${saved.apiKeyHint}，留空表示不修改` : 'sk-...（网关不校验可留空）';
   $('author').value = saved.author;
+  $('imageApiBase').value = saved.imageApiBase || '';
+  $('imageApiKey').value = '';
+  $('imageApiKey').placeholder = saved.hasImageKey ? `已保存 ${saved.imageApiKeyHint}，留空表示不修改` : '可空';
   $('browser').value = saved.browser;
   $('sandbox').value = saved.sandbox;
   fillModels([saved.model], saved.model, saved.visionModel);
@@ -56,7 +59,7 @@ async function refreshModels() {
   }
 }
 function settingsPatch() {
-  return { baseUrl: $('baseUrl').value, apiKey: $('apiKey').value, model: $('model').value, modelPinned: true, visionModel: $('visionModel').value, author: $('author').value, browser: $('browser').value, sandbox: $('sandbox').value };
+  return { baseUrl: $('baseUrl').value, apiKey: $('apiKey').value, model: $('model').value, modelPinned: true, visionModel: $('visionModel').value, author: $('author').value, imageApiBase: $('imageApiBase').value, imageApiKey: $('imageApiKey').value, browser: $('browser').value, sandbox: $('sandbox').value };
 }
 function showSettings(show) {
   $('paneSettings').classList.toggle('hidden', !show);

@@ -28,6 +28,8 @@ export const DEFAULTS = Object.freeze({
   author: '',
   browser: process.platform === 'win32' ? 'msedge' : 'chrome',
   sandbox: 'workspace-write',
+  imageApiBase: '', // 生图接口（OpenAI 兼容 /v1/images/generations，如 Muse），可空
+  imageApiKey: '',
 });
 
 const BROWSERS = ['msedge', 'chrome', 'chromium'];
@@ -65,6 +67,13 @@ export function mergeSettings(current, patch) {
     if (!BROWSERS.includes(patch.browser)) throw new Error(`浏览器只能是 ${BROWSERS.join('/')}`);
     next.browser = patch.browser;
   }
+  if (patch.imageApiBase !== undefined) {
+    const u = String(patch.imageApiBase).trim().replace(/\/+$/, '');
+    if (u) { let ok = false; try { ok = /^https?:$/.test(new URL(u).protocol); } catch { /* 下面报错 */ } if (!ok) throw new Error('生图接口地址不是合法的 http(s) URL'); }
+    next.imageApiBase = u;
+  }
+  if (patch.imageApiKey === null) next.imageApiKey = '';
+  else if (typeof patch.imageApiKey === 'string' && patch.imageApiKey.trim()) next.imageApiKey = patch.imageApiKey.trim();
   if (patch.sandbox !== undefined) {
     if (!SANDBOXES.includes(patch.sandbox)) throw new Error('sandbox 取值不合法');
     next.sandbox = patch.sandbox;
@@ -80,8 +89,9 @@ export function saveSettings(patch) {
 
 /** 给前端看的设置：Key 只显示末 4 位。 */
 export function publicSettings(s) {
-  const { apiKey, ...rest } = s;
-  return { ...rest, hasKey: Boolean(apiKey), apiKeyHint: apiKey ? `****${apiKey.slice(-4)}` : '' };
+  const { apiKey, imageApiKey, ...rest } = s;
+  const hint = (k) => (k ? `****${k.slice(-4)}` : '');
+  return { ...rest, hasKey: Boolean(apiKey), apiKeyHint: hint(apiKey), hasImageKey: Boolean(imageApiKey), imageApiKeyHint: hint(imageApiKey) };
 }
 
 const toml = (v) => JSON.stringify(String(v)); // JSON 字符串转义与 TOML basic string 兼容
@@ -144,5 +154,7 @@ export function codexEnv(s) {
     WX_WRITER_NODE: process.execPath,
     WX_WRITER_APP_ROOT: APP_ROOT,
     [API_KEY_ENV]: s.apiKey || 'sk-no-key',
+    WX_IMAGE_API_BASE: s.imageApiBase || '',
+    WX_IMAGE_API_KEY: s.imageApiKey || '',
   };
 }

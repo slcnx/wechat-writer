@@ -25,6 +25,11 @@
     <label>写作模型 <span id="modelHint" class="hint"></span><select id="model"></select></label>
     <label>看图模型（可选）<select id="visionModel"></select>
       <span class="hint">写作模型不能看图时，选一个能看图的模型：上传的图片会先交给它生成画面描述，再写进文章。</span></label>
+    <div class="two">
+      <label>生图接口（可选）<input id="imageApiBase" placeholder="如 http://localhost:18610"></label>
+      <label>生图 Key <input id="imageApiKey" type="password" placeholder="m2a_..."></label>
+    </div>
+    <p class="hint">填了就能让 AI 生成插画、示意地图（OpenAI 兼容 /v1/images/generations，如 Muse）。</p>
     <label>作者署名 <input id="author" maxlength="16"></label>
     <label>浏览器
       <select id="browser"><option value="msedge">Microsoft Edge</option><option value="chrome">Google Chrome</option><option value="chromium">Playwright Chromium</option></select>

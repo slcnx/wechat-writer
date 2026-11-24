@@ -54,8 +54,9 @@ const loggedIn = () => Boolean(ctx && ctx.pages().some((p) => tokenFromUrl(p.url
 export function browserReady() { return loggedIn(); }
 
 /** 打开浏览器到公众号后台并等待扫码登录（最多 5 分钟），返回 CDP 地址。onStatus 提示扫码；cancelled() 为真时放弃等待（用户插话/停止）。 */
-export async function ensureBrowser(settings, onStatus = () => {}, cancelled = () => false) {
+export async function ensureBrowser(settings, onStatus = () => {}, cancelled = () => false, { mp = true } = {}) {
   const c = await context(settings);
+  if (!mp) return cdpEndpoint(); // 只用来上小红书等网站：不打开、不等待公众号登录
   if (!loggedIn()) {
     const page = c.pages().find((p) => p.url().includes('mp.weixin.qq.com')) || c.pages()[0] || (await c.newPage());
     if (!page.url().includes('mp.weixin.qq.com')) await page.goto(MP_HOME);
@@ -72,6 +73,7 @@ export async function ensureBrowser(settings, onStatus = () => {}, cancelled = (
 }
 
 const toml = (v) => JSON.stringify(String(v));
+export const NETWORK_ARGS = ['-c', 'sandbox_workspace_write.network_access=true'];
 /** 本次运行接上浏览器工具：Playwright MCP 连本机这个浏览器，工具调用免审批（仅限此次运行）。 */
 export function browserMcpArgs(endpoint) {
   const cli = path.join(APP_ROOT, 'node_modules', '@playwright', 'mcp', 'cli.js');
@@ -81,8 +83,8 @@ export function browserMcpArgs(endpoint) {
     '-c', `mcp_servers.browser.args=[${[cli, '--cdp-endpoint', endpoint, '--image-responses', 'omit'].map(toml).join(', ')}]`,
     '-c', 'mcp_servers.browser.default_tools_approval_mode="approve"',
     '-c', 'mcp_servers.browser.startup_timeout_sec=60',
-    // 填稿脚本需要连本机调试端口
-    '-c', 'sandbox_workspace_write.network_access=true',
+    // 填稿/取图脚本需要连本机调试端口
+    ...NETWORK_ARGS,
   ];
 }
 

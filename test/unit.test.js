@@ -114,3 +114,17 @@ test('readJsonSafe 容忍 BOM', async () => {
   fs.writeFileSync(f, '\uFEFF{"title":"标题"}');
   assert.equal(readJsonSafe(f, null).title, '标题');
 });
+
+test('生图接口设置：校验地址、Key 不回显、经环境变量传给 Codex', async () => {
+  const { mergeSettings, publicSettings, codexEnv, DEFAULTS } = await import('../src/config.js');
+  const s = mergeSettings(DEFAULTS, { imageApiBase: 'http://localhost:18610/', imageApiKey: 'm2a_secret1234' });
+  assert.equal(s.imageApiBase, 'http://localhost:18610');
+  const pub = publicSettings(s);
+  assert.equal(pub.imageApiKey, undefined);
+  assert.equal(pub.imageApiKeyHint, '****1234');
+  assert.equal(mergeSettings(s, { imageApiKey: '' }).imageApiKey, 'm2a_secret1234');
+  assert.throws(() => mergeSettings(DEFAULTS, { imageApiBase: 'ftp://x' }), /生图接口/);
+  const env = codexEnv(s);
+  assert.equal(env.WX_IMAGE_API_BASE, 'http://localhost:18610');
+  assert.equal(env.WX_IMAGE_API_KEY, 'm2a_secret1234');
+});

@@ -17,7 +17,7 @@ test('首轮带角色说明（含信息不足先追问），续聊只带本轮�
   assert.match(first, /本轮新增素材：图1/);
   assert.match(first, /浏览器：本轮不可用。只修改本地文章/);
   assert.match(first, /一律只改本地文章/);
-  const next = buildTurnPrompt({ first: false, message: '填进公众号', added: [], imagesText: '', browser: true, script: '/s.mjs' });
+  const next = buildTurnPrompt({ first: false, message: '填进公众号', added: [], imagesText: '', browser: 'mp', script: '/s.mjs' });
   assert.ok(!next.includes(ROLE));
   assert.match(next, /继续同一篇文章/);
   assert.match(next, /浏览器：已登录[\s\S]*\/s\.mjs[\s\S]*严禁点击发表/);
@@ -42,4 +42,14 @@ test('插话轮次的 prompt 提示 AI 接着做、不要重做', () => {
   assert.match(p, /被用户插话打断/);
   assert.match(p, /用户：标题改短点/);
   assert.doesNotMatch(buildTurnPrompt({ first: false, message: 'x', added: [], imagesText: '', browser: false }), /打断/);
+});
+
+test('提到小红书只开浏览器取图，不进公众号模式', async () => {
+  const { browserMode } = await import('../src/chat.js');
+  assert.equal(browserMode('第6节配图去小红书找'), 'xhs');
+  assert.equal(browserMode('填进公众号'), 'mp');
+  assert.equal(browserMode('标题短一点'), '');
+  const p = buildTurnPrompt({ first: false, message: 'x', added: [], imagesText: '', browser: 'xhs' });
+  assert.match(p, /小红书取图；本轮不要操作公众号后台/);
+  assert.doesNotMatch(p, /本轮不可用/);
 });
