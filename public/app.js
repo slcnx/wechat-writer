@@ -84,3 +84,34 @@ $('btnSave').onclick = async () => {
 loadSettings().then((s) => {
   if (!s.hasKey && /deepseek\.com/.test(s.baseUrl)) showSettings(true);
 });
+
+// ---------- 布局：左栏收起、对话/预览拖动分隔（记在本机） ----------
+(() => {
+  const grid = document.querySelector('.grid');
+  const sp = $('splitter');
+  const applySide = (hide) => grid.classList.toggle('no-side', hide);
+  const setW = (px) => { if (px) grid.style.setProperty('--chat-w', `${px}px`); else grid.style.removeProperty('--chat-w'); };
+  applySide(localStorage.getItem('wx.sideHidden') === '1');
+  setW(Number(localStorage.getItem('wx.chatW')) || 0);
+  $('btnSide').onclick = () => {
+    const hide = !grid.classList.contains('no-side');
+    applySide(hide);
+    localStorage.setItem('wx.sideHidden', hide ? '1' : '0');
+  };
+  sp.addEventListener('pointerdown', (e) => {
+    const chat = document.querySelector('.chat-card');
+    const left = chat.getBoundingClientRect().left;
+    const max = grid.getBoundingClientRect().right - left - 380 - 20; // 预览至少留 380px
+    document.body.classList.add('dragging');
+    sp.setPointerCapture(e.pointerId);
+    const move = (ev) => setW(Math.round(Math.min(max, Math.max(320, ev.clientX - left - 5))));
+    const up = () => {
+      document.body.classList.remove('dragging');
+      sp.removeEventListener('pointermove', move);
+      localStorage.setItem('wx.chatW', parseInt(grid.style.getPropertyValue('--chat-w'), 10) || '');
+    };
+    sp.addEventListener('pointermove', move);
+    sp.addEventListener('pointerup', up, { once: true });
+  });
+  sp.ondblclick = () => { setW(0); localStorage.removeItem('wx.chatW'); };
+})();

@@ -8,6 +8,7 @@
 </head>
 <body>
 <header>
+  <button id="btnSide" class="icon" type="button" title="收起/展开文章列表">☰</button>
   <h1>公众号写作助手</h1>
   <span class="sub">对话写公众号：给素材 → 出文章 → 预览 → 填入公众号</span>
   <button id="btnSettings" class="ghost">⚙ 设置</button>
@@ -63,9 +64,10 @@
       </div>
     </section>
 
+    <div id="splitter" class="splitter" title="拖动调整对话与预览宽度，双击恢复默认"></div>
+
     <section class="card preview-card">
-      <h2>预览</h2>
-      <div id="checkBox" class="check hidden"></div>
+      <div class="pv-head"><h2>预览</h2><div id="checkBox" class="check hidden"></div><button id="btnWidth" class="ghost small" type="button" title="切换预览宽度"></button></div>
       <iframe id="preview" title="预览"></iframe>
       <div id="gallery" class="mat-list hidden"></div>
       <div class="actions wrap">

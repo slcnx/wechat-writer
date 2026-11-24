@@ -4,10 +4,13 @@ body { display: flex; flex-direction: column; overflow: hidden; margin: 0; font-
 header { flex: none; display: flex; align-items: center; gap: 14px; padding: 10px 20px; background: #fff; border-bottom: 1px solid #e5e5e5; }
 header h1 { font-size: 20px; margin: 0; color: #07c160; }
 header .sub { color: #888; font-size: 14px; flex: 1; }
-main { flex: 1; min-height: 0; width: 100%; max-width: 1680px; margin: 0 auto; padding: 14px; box-sizing: border-box; }
-.grid { height: 100%; display: grid; grid-template-columns: 240px minmax(0, 1fr) minmax(0, 1fr); gap: 14px; }
+main { flex: 1; min-height: 0; width: 100%; margin: 0 auto; padding: 12px; box-sizing: border-box; }
+/* 左栏可收起；对话栏宽度可拖动（--chat-w），预览占余下全部 */
+.grid { height: 100%; display: grid; grid-template-columns: 220px var(--chat-w, minmax(360px, 2fr)) 10px minmax(380px, 3fr); gap: 0 10px; }
+.grid.no-side { grid-template-columns: var(--chat-w, minmax(360px, 2fr)) 10px minmax(380px, 3fr); }
+.grid.no-side > .side { display: none; }
 .grid > .card { margin: 0; min-height: 0; display: flex; flex-direction: column; }
-@media (max-width: 1100px) { body { overflow: auto; } .grid { height: auto; grid-template-columns: 1fr; } .grid > .card { height: 80vh; } }
+@media (max-width: 1100px) { body { overflow: auto; } .grid, .grid.no-side { height: auto; grid-template-columns: 1fr; gap: 14px; } .grid > .card { height: 80vh; } .splitter { display: none; } }
 .card { background: #fff; border-radius: 10px; padding: 18px 20px; box-shadow: 0 1px 3px rgba(0,0,0,.06); margin-bottom: 18px; }
 .card h2 { font-size: 17px; margin: 0 0 14px; }
 .card h3 { font-size: 15px; margin: 20px 0 8px; color: #555; }
@@ -68,8 +71,28 @@ label.attach { display: inline-flex; align-items: center; margin: 0; padding: 7p
 
 /* 一屏三栏 */
 .side > button { width: 100%; }
-.preview-card .mat-list { flex: none; max-height: 120px; overflow: auto; margin-top: 8px; }
-.preview-card h2 { margin-bottom: 8px; }
+.preview-card { padding: 12px 14px; }
+.pv-head { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; min-width: 0; }
+.pv-head h2 { margin: 0; flex: none; }
+.pv-head button.small { padding: 4px 10px; font-size: 12px; flex: none; margin-left: auto; }
+.pv-head .check { margin: 0; padding: 5px 10px; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pv-head .check:hover { white-space: normal; }
+.splitter { cursor: col-resize; border-radius: 4px; position: relative; }
+.splitter::after { content: ''; position: absolute; top: 50%; left: 3px; width: 4px; height: 44px; margin-top: -22px; border-radius: 2px; background: #cfd8d3; }
+.splitter:hover::after, body.dragging .splitter::after { background: #07c160; }
+body.dragging { cursor: col-resize; user-select: none; }
+body.dragging iframe { pointer-events: none; }
+button.icon { padding: 4px 10px; background: none; color: #07c160; font-size: 18px; border: 1px solid #d9eee2; }
+/* 素材图库：默认一行横向滚动，需要点名图片时再展开 */
+#gallery { display: block; flex: none; margin: 8px 0 0; }
+#gallery.hidden { display: none !important; }
+.g-head { display: flex; align-items: center; gap: 8px; font-size: 12px; color: #888; margin-bottom: 6px; }
+.g-head span { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.g-head button { padding: 3px 10px; font-size: 12px; }
+.g-strip { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 4px; }
+.g-strip .mat-item { flex: none; width: 84px; }
+.g-strip .mat-item img { height: 54px; }
+#gallery.open .g-strip { flex-wrap: wrap; overflow: auto; max-height: 38vh; }
 #logBox .log { max-height: 180px; }
 .mask { position: fixed; inset: 0; background: rgba(0,0,0,.35); z-index: 10; }
 .modal { position: fixed; z-index: 11; top: 50%; left: 50%; transform: translate(-50%, -50%); width: min(640px, 92vw); max-height: 88vh; overflow: auto; margin: 0; }

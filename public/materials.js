@@ -95,9 +95,20 @@
     box.classList.toggle('hidden', !images.length);
     if (!images.length) return;
     const head = document.createElement('div');
-    head.className = 'hint';
-    head.textContent = '素材图片（点击把编号填进对话框，例如"图2放开头""图3做封面"）：';
-    box.append(head);
+    head.className = 'g-head';
+    const tip = document.createElement('span');
+    tip.textContent = `素材图片 ${images.length} 张 · 点图把编号填进对话框（如"图2放开头""图3做封面"）`;
+    const toggle = document.createElement('button');
+    toggle.type = 'button';
+    toggle.className = 'ghost';
+    const sync = () => { toggle.textContent = box.classList.contains('open') ? '收起' : '展开全部'; };
+    box.classList.toggle('open', localStorage.getItem('wx.galleryOpen') === '1');
+    toggle.onclick = () => { box.classList.toggle('open'); localStorage.setItem('wx.galleryOpen', box.classList.contains('open') ? '1' : '0'); sync(); };
+    sync();
+    head.append(tip, toggle);
+    const strip = document.createElement('div');
+    strip.className = 'g-strip';
+    box.append(head, strip);
     for (const m of images) {
       const item = document.createElement('div');
       item.className = `mat-item gallery${usedIds.includes(m.id) ? ' used' : ''}`;
@@ -109,7 +120,7 @@
       item.title = m.from;
       item.append(img, label);
       item.onclick = () => { const t = document.getElementById(target); t.value += (t.value ? '，' : '') + m.id; t.focus(); };
-      box.append(item);
+      strip.append(item);
     }
   }
 

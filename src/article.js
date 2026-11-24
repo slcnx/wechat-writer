@@ -49,12 +49,12 @@ export function localizeImages(body, id) {
   return String(body).replace(/(<img\b[^>]*\bsrc\s*=\s*["'])images\/([\w.-]+)(["'])/gi, `$1/media/${id}/$2$3`);
 }
 
-/** 模拟手机阅读宽度的预览页。 */
+/** 预览页：默认手机阅读宽度，应用里可切到电脑宽度（改 #page 的 max-width）。 */
 export function previewPage(meta, body) {
   return `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(meta.title)} - 预览</title></head>
 <body style="margin:0;background:#ededed;font-family:-apple-system,'PingFang SC','Microsoft YaHei',sans-serif;">
-<div style="max-width:420px;margin:0 auto;background:#fff;min-height:100vh;padding:20px 16px 40px;box-sizing:border-box;">
+<div id="page" style="max-width:420px;margin:0 auto;background:#fff;min-height:100vh;padding:20px 16px 40px;box-sizing:border-box;">
 <h1 style="font-size:22px;line-height:1.4;font-weight:700;color:#222;margin:0 0 12px;">${esc(meta.title)}</h1>
 <div style="font-size:14px;color:#576b95;margin-bottom:22px;">${esc(meta.author || '')}</div>
 <div id="js_content">${body}</div>

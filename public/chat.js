@@ -143,3 +143,15 @@ $('btnCopy').onclick = async () => {
 };
 
 open(null);
+
+// 预览宽度：电脑（公众号 PC 阅读宽 677px）/ 手机（420px），记在本机
+const WIDTHS = { pc: ['677px', '🖥 电脑宽度'], phone: ['420px', '📱 手机宽度'] };
+let pvWidth = localStorage.getItem('wx.pvWidth') || 'pc';
+function applyWidth() {
+  $('btnWidth').textContent = WIDTHS[pvWidth][1];
+  const page = $('preview').contentDocument?.getElementById('page');
+  if (page) page.style.maxWidth = WIDTHS[pvWidth][0];
+}
+$('preview').addEventListener('load', applyWidth);
+$('btnWidth').onclick = () => { pvWidth = pvWidth === 'pc' ? 'phone' : 'pc'; localStorage.setItem('wx.pvWidth', pvWidth); applyWidth(); };
+applyWidth();
