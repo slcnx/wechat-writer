@@ -50,13 +50,42 @@
         list.append(item);
       });
     }
-    input.addEventListener('change', () => { files = files.concat([...input.files]); input.value = ''; render(); });
+    const add = (list) => { files = files.concat([...list]); render(); };
+    input.addEventListener('change', () => { add(input.files); input.value = ''; });
     return {
+      add,
       read: () => Promise.all(files.map(readFile)),
       count: () => files.length,
       clear: () => { urls.forEach((u) => URL.revokeObjectURL(u)); urls.clear(); files = []; render(); },
       render,
     };
+  }
+
+  /** 剪贴板/拖拽里的文件；截图粘贴时文件名都是 image.png，改成带时间的名字以免重名。 */
+  function filesFrom(dt) {
+    const out = [...(dt?.files || [])];
+    if (!out.length) for (const it of dt?.items || []) if (it.kind === 'file') { const f = it.getAsFile(); if (f) out.push(f); }
+    const stamp = new Date().toTimeString().slice(0, 8).replace(/:/g, '');
+    return out.map((f, i) => (/^image\.(png|jpe?g|gif|webp)$/i.test(f.name) || !f.name
+      ? new File([f], `粘贴-${stamp}-${i + 1}.${(f.type.split('/')[1] || 'png').replace('jpeg', 'jpg')}`, { type: f.type })
+      : f));
+  }
+
+  /** 让输入框支持直接粘贴、拖入图片/文档（文字照常粘贴）。 */
+  function acceptDrops(el, pick) {
+    el.addEventListener('paste', (e) => {
+      const fs = filesFrom(e.clipboardData);
+      if (!fs.length) return;
+      pick.add(fs);
+      if (!e.clipboardData.getData('text/plain')) e.preventDefault(); // 纯图片不往框里塞文字
+    });
+    el.addEventListener('dragover', (e) => { if ([...(e.dataTransfer?.types || [])].includes('Files')) { e.preventDefault(); el.classList.add('drop'); } });
+    el.addEventListener('dragleave', () => el.classList.remove('drop'));
+    el.addEventListener('drop', (e) => {
+      el.classList.remove('drop');
+      const fs = filesFrom(e.dataTransfer);
+      if (fs.length) { e.preventDefault(); pick.add(fs); }
+    });
   }
 
   /** 文章图库：显示已上传的素材图片，标注是否已用在正文里；点击把「图N」写进修改意见。 */
@@ -84,5 +113,5 @@
     }
   }
 
-  window.Mat = { picker, gallery };
+  window.Mat = { picker, gallery, acceptDrops };
 })();

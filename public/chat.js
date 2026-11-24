@@ -2,6 +2,7 @@
 let currentId = null;
 let pollTimer = null;
 const picker = Mat.picker('files', 'fileList', () => (window.currentImageCount || 0) + 1);
+Mat.acceptDrops($('msg'), picker);
 const WELCOME = $('chat').firstElementChild.cloneNode(true);
 
 function bubble(role, text, files = []) {
