@@ -6,7 +6,7 @@ import { DEFAULTS } from '../src/config.js';
 
 test('是否需要浏览器：按用户的话判断', () => {
   for (const t of ['填进公众号', '把图3设为封面', '存到草稿', '打开公众号后台']) assert.ok(wantsBrowser(t), t);
-  for (const t of ['写一篇成都美食', '图2放开头', '标题短一点']) assert.ok(!wantsBrowser(t), t);
+  for (const t of ['写一篇成都美食', '写一篇 600 字的公众号文章', '改一下这篇草稿', '图2放开头', '标题短一点']) assert.ok(!wantsBrowser(t), t);
 });
 
 test('首轮带角色说明（含信息不足先追问），续聊只带本轮内容', () => {
@@ -34,4 +34,11 @@ test('codex 参数：首轮 exec 新会话，续聊 exec resume 同一会话', (
   assert.ok(r.includes('sandbox_mode="workspace-write"'));
   assert.deepEqual(r.slice(-2), ['01a20787-761e-70d0-a616-ae7bbaae9952', '-']);
   assert.equal(SESSION_RE.exec('session id: 01a20787-761e-70d0-a616-ae7bbaae9952')[1], '01a20787-761e-70d0-a616-ae7bbaae9952');
+});
+
+test('插话轮次的 prompt 提示 AI 接着做、不要重做', () => {
+  const p = buildTurnPrompt({ first: false, message: '标题改短点', added: [], imagesText: '', browser: false, interrupted: true });
+  assert.match(p, /被用户插话打断/);
+  assert.match(p, /用户：标题改短点/);
+  assert.doesNotMatch(buildTurnPrompt({ first: false, message: 'x', added: [], imagesText: '', browser: false }), /打断/);
 });

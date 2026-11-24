@@ -45,10 +45,19 @@ export function runCodex({ cwd, prompt, settings, extraArgs = [], resumeId = '',
   pump(child.stdout);
   pump(child.stderr);
   child.stdin.end(prompt, 'utf8');
-  const timer = setTimeout(() => { onLog('[超时] Codex 运行超过时限，已终止'); child.kill(); }, timeoutMs);
+  const kill = () => killTree(child);
+  const timer = setTimeout(() => { onLog('[超时] Codex 运行超过时限，已终止'); kill(); }, timeoutMs);
   const done = new Promise((resolve) => {
     child.on('error', (e) => { onLog(`[启动失败] ${e.message}`); resolve(-1); });
     child.on('close', (code) => { clearTimeout(timer); resolve(code ?? -1); });
   });
-  return { done, cancel: () => child.kill() };
+  return { done, cancel: kill };
+}
+
+/** 结束 codex 及其子进程：Windows 上 kill() 只杀 node 包装进程，原生 codex 会成孤儿，要用 taskkill /T。 */
+function killTree(child) {
+  if (child.exitCode !== null || child.killed) return;
+  if (process.platform === 'win32' && child.pid) {
+    spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], { windowsHide: true }).on('error', () => child.kill());
+  } else child.kill('SIGTERM'); // bin/codex.js 会把信号转给原生进程
 }

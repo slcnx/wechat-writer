@@ -28,7 +28,7 @@ function renderChat(chat, running) {
   box.scrollTop = box.scrollHeight;
 }
 
-const STATUS = { running: 'AI 处理中…', done: '', failed: '上次出错' };
+const STATUS = { running: 'AI 处理中…', done: '', failed: '上次出错', stopped: '已停止' };
 async function refreshHistory() {
   const { jobs } = await call('/api/jobs');
   const items = jobs.map((j) => {
@@ -58,10 +58,19 @@ async function poll() {
   $('status').textContent = job.notice || '';
   $('logBox').classList.toggle('hidden', !(job.log || []).length);
   $('log').textContent = (job.log || []).join('\n');
-  $('btnSend').disabled = running;
+  setRunning(running);
   if (running) { pollTimer = setTimeout(poll, 2000); return; }
   await showArticle(currentId);
   refreshHistory();
+}
+
+// 运行中仍可发送：作为「插话」打断当前这一轮并按新消息继续；「停止」直接结束本轮
+function setRunning(running) {
+  $('btnSend').disabled = false;
+  $('btnSend').textContent = running ? '插话' : '发送';
+  $('btnSend').title = running ? '打断 AI 当前这一轮，按这条新消息继续' : '';
+  $('btnStop').classList.toggle('hidden', !running);
+  $('btnStop').disabled = false;
 }
 
 async function showArticle(id) {
@@ -88,6 +97,7 @@ async function open(id) {
   $('logBox').classList.add('hidden');
   window.currentImageCount = 0;
   await refreshHistory();
+  setRunning(false);
   if (!id) { renderChat([], false); $('btnCopy').disabled = true; picker.render(); $('msg').focus(); return; }
   await poll();
 }
@@ -112,6 +122,12 @@ async function send() {
 }
 
 $('btnSend').onclick = send;
+$('btnStop').onclick = async () => {
+  if (!currentId) return;
+  $('btnStop').disabled = true;
+  try { await call(`/api/jobs/${currentId}/stop`, {}); msg($('pubMsg'), '已停止', 'ok'); } catch (e) { msg($('pubMsg'), e.message, 'err'); }
+  poll();
+};
 $('msg').addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) send(); });
 $('btnNew').onclick = () => open(null);
 

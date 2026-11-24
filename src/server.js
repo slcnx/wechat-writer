@@ -8,7 +8,7 @@ import { readJson, sendJson, sendHtml, serveStatic } from './http.js';
 import { getJob, listJobs, readArticle, readChat, isValidId, jobDir } from './jobs.js';
 import { previewPage, localizeImages } from './article.js';
 import fs from 'node:fs';
-import { sendMessage } from './chat.js';
+import { sendMessage, stopTurn } from './chat.js';
 import { browserReady } from './publisher.js';
 
 const PORT = Number(process.env.WX_WRITER_PORT || 8848);
@@ -42,6 +42,11 @@ async function api(req, res, url) {
     const body = await readJson(req);
     if (body.id && !isValidId(body.id)) return sendJson(res, 400, { error: '非法文章 id' });
     return sendJson(res, 200, await sendMessage(body, settings));
+  }
+  const stop = /^\/api\/jobs\/([^/]+)\/stop$/.exec(p);
+  if (stop && req.method === 'POST') {
+    if (!isValidId(stop[1])) return sendJson(res, 400, { error: '非法文章 id' });
+    return sendJson(res, 200, await stopTurn(stop[1]));
   }
   const m = /^\/api\/(jobs|articles)\/([^/]+)$/.exec(p);
   if (!m || !isValidId(m[2]) || req.method !== 'GET') return sendJson(res, 404, { error: '接口不存在' });

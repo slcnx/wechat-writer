@@ -53,8 +53,8 @@ const loggedIn = () => Boolean(ctx && ctx.pages().some((p) => tokenFromUrl(p.url
 /** 浏览器已打开且已登录公众号后台。 */
 export function browserReady() { return loggedIn(); }
 
-/** 打开浏览器到公众号后台并等待扫码登录（最多 5 分钟），返回 CDP 地址。onStatus 用来提示用户扫码。 */
-export async function ensureBrowser(settings, onStatus = () => {}) {
+/** 打开浏览器到公众号后台并等待扫码登录（最多 5 分钟），返回 CDP 地址。onStatus 提示扫码；cancelled() 为真时放弃等待（用户插话/停止）。 */
+export async function ensureBrowser(settings, onStatus = () => {}, cancelled = () => false) {
   const c = await context(settings);
   if (!loggedIn()) {
     const page = c.pages().find((p) => p.url().includes('mp.weixin.qq.com')) || c.pages()[0] || (await c.newPage());
@@ -63,6 +63,7 @@ export async function ensureBrowser(settings, onStatus = () => {}) {
     if (!loggedIn()) onStatus('请在弹出的浏览器窗口里用公众号管理员微信扫码登录（5 分钟内）');
     const deadline = Date.now() + LOGIN_TIMEOUT;
     while (!loggedIn()) {
+      if (cancelled()) throw new Error('已取消等待扫码');
       if (Date.now() > deadline) throw new Error('5 分钟内未检测到公众号登录');
       await new Promise((r) => setTimeout(r, 1500));
     }

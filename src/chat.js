@@ -15,7 +15,9 @@ const MAX_LOG = 400;
 const MAX_VISION = 8;
 const TEXT_ONLY = ['--disable', 'view_image'];
 const noVision = new Set(); // 已确认不支持图片输入的「地址|模型」
-const BROWSER_WORDS = /公众号|填入|填进|填到|草稿|封面|发布|发表|编辑器|后台|群发/;
+const turns = new Map(); // id -> { cancel, reason, promise }：正在运行的一轮，用于插话/停止
+// 只认「要动公众号后台」的说法；「写一篇公众号文章」不该弹浏览器
+const BROWSER_WORDS = /填入|填进|填到|放进|贴进|贴到|发到|同步到|封面|发布|发表|编辑器|后台|群发|存.{0,3}草稿|草稿箱/;
 
 export const ROLE = [
   '你是「公众号写作助手」，在当前文章目录里工作，和用户用中文对话。',
@@ -29,10 +31,11 @@ export const ROLE = [
 export function wantsBrowser(text) { return BROWSER_WORDS.test(String(text)); }
 
 /** 组装本轮 prompt：首轮带角色说明，之后只带本轮内容。 */
-export function buildTurnPrompt({ first, message, added, imagesText, browser, script }) {
+export function buildTurnPrompt({ first, message, added, imagesText, browser, script, interrupted }) {
   return [
     first ? ROLE : '',
     first ? '' : '（继续同一篇文章的对话）',
+    interrupted ? '（上一轮还没做完就被用户插话打断了：先确认已完成到哪一步，再结合下面这条新消息继续，不要从头重做。）' : '',
     `用户：${message || '（用户只上传了素材，没有附言）'}`,
     added.length ? `本轮新增素材：${added.join('、')}` : '',
     imagesText,
@@ -52,7 +55,8 @@ export async function sendMessage({ id, message, files }, settings) {
   if (!text && !decoded.length) throw new Error('请输入内容或上传素材');
   let job = id ? getJob(id) : null;
   if (id && !job && !fs.existsSync(jobDir(id))) throw new Error('文章不存在');
-  if (job?.status === 'running') throw new Error('AI 还在处理上一条消息，请稍候');
+  // 运行中再发消息 = 插话：打断当前这一轮，在同一个会话里带着新消息接着做
+  const interrupted = job?.status === 'running' && await interrupt(id, 'steer');
   if (!id) id = newId();
   const dir = jobDir(id);
   fs.mkdirSync(path.join(dir, 'materials'), { recursive: true });
@@ -64,21 +68,42 @@ export async function sendMessage({ id, message, files }, settings) {
   if (text) fs.appendFileSync(path.join(dir, 'materials', '00-用户消息.md'), `\n## ${new Date().toLocaleString('zh-CN')}\n${text}\n`);
   appendChat(id, { role: 'user', text, files: [...saved, ...images.map((m) => `${m.id}（${m.from}）`)] });
   persist(job);
-  runTurn(job, { text, saved, images }, settings).catch((e) => finish(job, -1, e.message));
+  const ctx = { cancel: null, reason: '' };
+  turns.set(id, ctx);
+  ctx.promise = runTurn(job, ctx, { text, saved, images, interrupted }, settings)
+    .catch((e) => finish(job, ctx, -1, e.message))
+    .finally(() => { if (turns.get(id) === ctx) turns.delete(id); });
   return { id };
+}
+
+/** 打断正在运行的一轮（reason=steer 插话 / stop 停止），等它收尾；返回是否确实打断了。 */
+async function interrupt(id, reason) {
+  const ctx = turns.get(id);
+  if (!ctx) return false;
+  ctx.reason = reason;
+  ctx.cancel?.();
+  const slow = new Promise((r) => setTimeout(r, 20000, 'slow'));
+  if (await Promise.race([ctx.promise, slow]) === 'slow') throw new Error('AI 正在等待浏览器登录，暂时无法打断，请先扫码或稍后再试');
+  return true;
+}
+
+export async function stopTurn(id) {
+  if (!(await interrupt(id, 'stop'))) throw new Error('当前没有正在执行的任务');
+  return { ok: true };
 }
 
 const log = (job) => (line) => { job.log.push(line); if (job.log.length > MAX_LOG) job.log.shift(); };
 
-async function runTurn(job, { text, saved, images }, settings) {
+async function runTurn(job, ctx, { text, saved, images, interrupted }, settings) {
   const dir = jobDir(job.id);
   const say = log(job);
   let endpoint = '';
   if (wantsBrowser(text) || browserReady()) {
-    endpoint = await ensureBrowser(settings, (m) => { job.notice = m; say(`[浏览器] ${m}`); });
+    endpoint = await ensureBrowser(settings, (m) => { job.notice = m; say(`[浏览器] ${m}`); }, () => Boolean(ctx.reason));
     job.notice = '';
     writeFileAtomic(path.join(dir, 'cdp.json'), JSON.stringify({ endpoint, articleId: job.id }));
   }
+  if (ctx.reason) return finish(job, ctx, -1, '');
   await visionDescribe(dir, settings, say).catch((e) => say(`[看图] 出错：${e.message}`));
   const resumeId = readSession(job.id);
   const prompt = buildTurnPrompt({
@@ -88,18 +113,24 @@ async function runTurn(job, { text, saved, images }, settings) {
     imagesText: readImages(dir).length ? listImages(readImages(dir)) : '',
     browser: Boolean(endpoint),
     script: path.join(paths.codexHome(), 'skills', 'wechat-publish', 'scripts', 'fill-mp.mjs'),
+    interrupted,
   });
   const lastFile = path.join(dir, 'out', '.last-reply.txt');
   fs.rmSync(lastFile, { force: true });
   const base = endpoint ? browserMcpArgs(endpoint) : [];
-  const once = (extra, sid) => runCodex({ cwd: dir, prompt, settings, extraArgs: [...base, ...extra], resumeId: sid, lastMessageFile: lastFile, onLog: say }).done;
+  const once = (extra, sid) => {
+    if (ctx.reason) return Promise.resolve(-1);
+    const run = runCodex({ cwd: dir, prompt, settings, extraArgs: [...base, ...extra], resumeId: sid, lastMessageFile: lastFile, onLog: say });
+    ctx.cancel = run.cancel;
+    return run.done;
+  };
   const vision = visionArgs(dir, images, settings);
   let code = await once(vision, resumeId);
   if (!resumeId) {
     const sid = job.log.map((l) => SESSION_RE.exec(l)?.[1]).find(Boolean);
     if (sid) saveSession(job.id, sid);
   }
-  if (code !== 0 && vision !== TEXT_ONLY) {
+  if (code !== 0 && vision !== TEXT_ONLY && !ctx.reason) {
     noVision.add(`${settings.baseUrl}|${settings.model}`);
     say('[提示] 当前模型不支持看图，改为不看图重试（可在设置里选一个「看图模型」）');
     code = await once(TEXT_ONLY, readSession(job.id));
@@ -107,17 +138,25 @@ async function runTurn(job, { text, saved, images }, settings) {
   fs.rmSync(path.join(dir, 'cdp.json'), { force: true });
   let reply = '';
   try { reply = fs.readFileSync(lastFile, 'utf8').trim(); } catch { /* 无回复 */ }
-  finish(job, code, code === 0 ? '' : 'AI 执行未成功，看下方日志', reply);
+  finish(job, ctx, code, code === 0 ? '' : 'AI 执行未成功，看下方日志', reply);
 }
 
-function finish(job, code, error, reply = '') {
+function finish(job, ctx, code, error, reply = '') {
   const { check } = readArticle(job.id);
   job.check = check;
-  job.status = code === 0 ? 'done' : 'failed';
-  job.error = error;
   job.notice = '';
   job.updatedAt = Date.now();
-  appendChat(job.id, { role: 'assistant', text: reply || (error ? `（出错了：${error}）` : '（已处理）'), ok: code === 0 });
+  if (ctx.reason) {
+    // 插话：不留回复，紧接着的新一轮会接手；停止：留一条记录
+    job.status = 'stopped';
+    job.error = '';
+    log(job)(ctx.reason === 'stop' ? '[已停止] 用户停止了本轮' : '[插话] 用户发来新消息，打断本轮');
+    if (ctx.reason === 'stop') appendChat(job.id, { role: 'assistant', text: '（已停止。已改动的内容会保留，可以接着说下一步。）', ok: false });
+  } else {
+    job.status = code === 0 ? 'done' : 'failed';
+    job.error = error;
+    appendChat(job.id, { role: 'assistant', text: reply || (error ? `（出错了：${error}）` : '（已处理）'), ok: code === 0 });
+  }
   persist(job);
 }
 
